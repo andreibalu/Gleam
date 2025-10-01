@@ -9,53 +9,54 @@ import SwiftUI
 import SwiftData
 
 struct ContentView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query private var items: [Item]
+    @State private var selectedTab: Int = 0
+    @State private var navigationPath: [ScanResult] = []
+    @State private var showOnboarding: Bool = false
+    @AppStorage("didCompleteOnboarding") private var didCompleteOnboarding: Bool = false
 
     var body: some View {
-        NavigationSplitView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))")
-                    } label: {
-                        Text(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))
-                    }
+        TabView(selection: $selectedTab) {
+            NavigationStack(path: $navigationPath) {
+                HomeView {
+                    selectedTab = 1
                 }
-                .onDelete(perform: deleteItems)
-            }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
-                }
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
+                .navigationDestination(for: ScanResult.self) { result in
+                    ResultsView(result: result)
                 }
             }
-        } detail: {
-            Text("Select an item")
-        }
-    }
+            .tabItem { Label("Home", systemImage: "house") }
+            .tag(0)
 
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(timestamp: Date())
-            modelContext.insert(newItem)
-        }
-    }
-
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            for index in offsets {
-                modelContext.delete(items[index])
+            NavigationStack {
+                ScanView { result in
+                    navigationPath = [result]
+                    selectedTab = 0
+                }
             }
+            .tabItem { Label("Scan", systemImage: "camera") }
+            .tag(1)
+
+            NavigationStack {
+                HistoryView()
+            }
+            .tabItem { Label("History", systemImage: "clock") }
+            .tag(2)
+
+            NavigationStack {
+                SettingsView()
+            }
+            .tabItem { Label("Settings", systemImage: "gearshape") }
+            .tag(3)
+        }
+        .onAppear {
+            if !didCompleteOnboarding { showOnboarding = true }
+        }
+        .fullScreenCover(isPresented: $showOnboarding) {
+            OnboardingView()
         }
     }
 }
 
-#Preview {
-    ContentView()
-        .modelContainer(for: Item.self, inMemory: true)
-}
+//#Preview {
+//    ContentView()
+//}

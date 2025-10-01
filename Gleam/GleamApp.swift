@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import PhotosUI
 
 @main
 struct GleamApp: App {
@@ -26,6 +27,7 @@ struct GleamApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .scanRepository(FakeScanRepository())
         }
         .modelContainer(sharedModelContainer)
     }

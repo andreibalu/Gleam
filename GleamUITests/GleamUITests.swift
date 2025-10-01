@@ -23,12 +23,25 @@ final class GleamUITests: XCTestCase {
     }
 
     @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
+    func testBasicNavigation() throws {
         let app = XCUIApplication()
         app.launch()
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
+        // Home tab should have scan button
+        let scanButton = app.buttons["home_scan_button"]
+        XCTAssertTrue(scanButton.waitForExistence(timeout: 3))
+
+        // Switch to Scan tab
+        app.tabBars.buttons["Scan"].tap()
+        XCTAssertTrue(app.buttons["Choose Photo"].exists)
+
+        // Switch to History tab
+        app.tabBars.buttons["History"].tap()
+        XCTAssertTrue(app.navigationBars["History"].exists)
+
+        // Switch to Settings tab
+        app.tabBars.buttons["Settings"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].exists)
     }
 
     @MainActor
