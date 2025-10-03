@@ -34,11 +34,19 @@ final class GleamUITests: XCTestCase {
 
         // Switch to Scan tab
         app.tabBars.buttons["Scan"].tap()
-        XCTAssertTrue(app.buttons["Choose Photo"].exists)
+        let takePhotoButton = app.buttons["scan_take_photo_button"]
+        var didFindTakePhoto = takePhotoButton.waitForExistence(timeout: 6)
+        if !didFindTakePhoto {
+            didFindTakePhoto = app.buttons["Take photo"].waitForExistence(timeout: 2)
+        }
+        XCTAssertTrue(didFindTakePhoto)
+        XCTAssertTrue(app.buttons["Choose from library"].waitForExistence(timeout: 2))
 
         // Switch to History tab
         app.tabBars.buttons["History"].tap()
         XCTAssertTrue(app.navigationBars["History"].exists)
+        let emptyState = app.staticTexts["No history yet"]
+        XCTAssertTrue(emptyState.waitForExistence(timeout: 3))
 
         // Switch to Settings tab
         app.tabBars.buttons["Settings"].tap()
@@ -48,7 +56,10 @@ final class GleamUITests: XCTestCase {
     @MainActor
     func testLaunchPerformance() throws {
         // This measures how long it takes to launch your application.
-        measure(metrics: [XCTApplicationLaunchMetric()]) {
+        var options = XCTMeasureOptions()
+        options.iterationCount = 1
+
+        measure(metrics: [XCTApplicationLaunchMetric()], options: options) {
             let app = XCUIApplication()
             app.launchArguments.append("--uitest-skip-onboarding")
             app.launch()

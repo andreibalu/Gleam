@@ -12,6 +12,15 @@ import PhotosUI
 @main
 struct GleamApp: App {
     @StateObject private var scanSession = ScanSession()
+    @StateObject private var historyStore: HistoryStore
+
+    init() {
+        let historyRepository = InMemoryHistoryRepository()
+        _historyStore = StateObject(wrappedValue: HistoryStore(
+            repository: historyRepository,
+            appendHandler: { historyRepository.insert($0) }
+        ))
+    }
     
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
@@ -31,6 +40,7 @@ struct GleamApp: App {
             ContentView()
                 .scanRepository(RemoteScanRepository(httpClient: DefaultHTTPClient()))
                 .environmentObject(scanSession)
+                .environmentObject(historyStore)
         }
         .modelContainer(sharedModelContainer)
     }

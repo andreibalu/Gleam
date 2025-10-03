@@ -1,5 +1,7 @@
 # TODO: Ship the Backend + App Integration
 
+> **Reminder:** Apply a strict TDD workflow for every new change (write failing test, implement, then rerun).
+
 Use this checklist to go from mock data to a production-ready experience. Complete each step in order; nothing else in the app needs editing until you reach it here.
 
 ---

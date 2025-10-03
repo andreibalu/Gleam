@@ -6,7 +6,8 @@ protocol ScanRepository {
 }
 
 protocol HistoryRepository {
-    func list() async throws -> [ScanResult]
+    func list() async throws -> [HistoryItem]
+    func delete(id: String) async throws
 }
 
 protocol AuthRepository {

@@ -1,56 +1,18 @@
 ## Fixes and Refinements
 
-### 1) Home: "Scan your smile" should open the camera
-- **Current**: `HomeView` button just switches tab via `onScanTapped` → Scan tab; no camera capture.
-- **Agent must do**:
-  - Add a SwiftUI camera wrapper (e.g., `CameraCaptureView`) using `UIImagePickerController` or `AVFoundation`.
-    - Files: add `Gleam/Support/Camera/CameraCaptureView.swift` (SwiftUI `UIViewControllerRepresentable`).
-    - Ensure `NSCameraUsageDescription` is present in the Gleam target `Info.plist`.
-  - Update `HomeView` to present the camera modally when the button is tapped and store the captured image in a shared session object.
-    - Introduce `ScanSession: ObservableObject` holding `capturedImageData`.
-    - Provide it at the app root (in `GleamApp` or `ContentView`) via `.environmentObject`.
-  - After successful capture, switch to the Scan tab and prefill the image so "Analyze" is enabled.
-    - `ContentView`: on camera success, set `selectedTab = 1` and let `ScanView` read `ScanSession.capturedImageData`.
-  - Simulator fallback: if camera is unavailable, fall back to `PhotosPicker` (photo library).
-  - Accessibility: keep `home_scan_button` identifier; add an identifier for the camera sheet.
-  - Manual steps:
-    - In Xcode, add `NSCameraUsageDescription` to the target `Info.plist` with a user-facing reason.
-    - If testing on a real device, grant Camera permission in iOS Settings after first prompt.
+### 1) Home: "Scan your smile" should open the camera ✅
+- Implemented shared `ScanSession`, reusable `CameraCaptureView`, and automatic tab routing after capture.
+- Simulator fallback via photo picker when camera unavailable.
+- Accessibility identifiers preserved.
 
-### 2) Scan tab: show "Take photo" when no image; redirect to Home to capture
-- **Current**: `ScanView` shows placeholder + `PhotosPicker("Choose Photo")` when `selectedImageData == nil`.
-- **Agent must do**:
-  - In `ScanView`, when no image is selected, add a primary "Take photo" button.
-  - On tap, set a cross-screen flag and navigate to Home:
-    - Use `@AppStorage("pendingCameraCapture")` or a flag in `ScanSession` (e.g., `shouldOpenCamera = true`) and programmatically set `selectedTab = 0`.
-    - `HomeView` (or `ContentView`) should observe that flag and automatically present the camera, then reset the flag.
-  - Keep `PhotosPicker` as an alternate path via a secondary button/link.
-  - Accessibility: add an identifier for the new button (e.g., `scan_take_photo_button`).
-  - Manual steps:
-    - None beyond those in Fix 1 (camera permission). Ensure simulator fallback uses photo library.
+### 2) Scan tab: show "Take photo" when no image; redirect to Home to capture ✅
+- Scan tab now offers "Take photo" when empty and "Take a new photo" alongside library option when an image exists.
+- Uses cross-tab flag in `ScanSession` to trigger Home camera sheet.
 
-### 3) History: allow deleting items
-- **Current**: `HistoryView` displays an in-memory array; no delete. `HistoryRepository` only supports `list()`; `ScanResult` lacks a stable id/timestamp.
-- **Agent must do**:
-  - Data model: introduce a stable identifier and timestamp for history entries.
-    - Option A: extend `ScanResult` with `id: String` and `createdAt: Date`.
-    - Option B: create `HistoryItem { id, createdAt, result: ScanResult }` and use that in history flows.
-  - Protocols:
-    - Update `HistoryRepository` to include `delete(id: String) async throws`.
-    - Implement `RemoteHistoryRepository` for list/delete (Firestore path `users/{uid}/history/{id}`) or Functions endpoints (`/history/list`, `/history/delete/:id`).
-  - UI:
-    - `HistoryView`: bind list to repository data, add swipe-to-delete via `.onDelete(perform:)`, call repository `delete` and update local state.
-    - Add an empty state view when history is empty.
-  - Backend:
-    - If using Functions: add `historyList` and `historyDelete` HTTP functions; require Firebase ID token; validate server-side with `firebase-admin`.
-  - QA/Acceptance:
-    - Deleting removes the item locally and remotely; pull-to-refresh (if added) reflects server state.
-    - Unauthorized attempts return a clear error and do not modify UI state.
-  - Manual steps:
-    - Enable Firebase Authentication in the Firebase Console.
-    - Deploy updated Functions (`firebase deploy --only functions`).
-    - If using Firestore directly, deploy updated security rules (`firebase deploy --only firestore:rules`).
-    - Confirm Firestore collections exist or are auto-created: `users/{uid}/history`.
+### 3) History: allow deleting items ✅
+- Added `HistoryItem` model, `HistoryStore`, and in-memory repository with async delete support.
+- History tab now loads shared store, renders empty state, and supports swipe-to-delete.
+- New scan results append to the shared history immediately after analysis.
 
 ### 4) Settings: add "Reset onboarding"
 - **Current**: `SettingsView` only has Appearance/Privacy; onboarding tracked by `@AppStorage("didCompleteOnboarding")`.

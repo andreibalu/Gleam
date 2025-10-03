@@ -5,6 +5,7 @@ import UIKit
 struct ScanView: View {
     @Environment(\.scanRepository) private var scanRepository
     @EnvironmentObject private var scanSession: ScanSession
+    @EnvironmentObject private var historyStore: HistoryStore
     @State private var photoItem: PhotosPickerItem? = nil
     @State private var selectedImageData: Data? = nil
     @State private var isAnalyzing = false
@@ -114,6 +115,7 @@ struct ScanView: View {
         do {
             let result = try await scanRepository.analyze(imageData: data)
             analysisResult = result
+            historyStore.append(result)
             onFinished(result)
         } catch { }
     }

@@ -10,6 +10,7 @@ import SwiftData
 
 struct ContentView: View {
     @EnvironmentObject private var scanSession: ScanSession
+    @EnvironmentObject private var historyStore: HistoryStore
     @State private var selectedTab: Int = 0
     @State private var navigationPath: [ScanResult] = []
     @State private var showOnboarding: Bool = false
