@@ -1,0 +1,9 @@
+// Release Configuration for Gleam
+// Replace the API_BASE_URL with your Firebase Functions URL (production environment)
+// Example: https://us-central1-gleam-prod.cloudfunctions.net
+
+API_BASE_URL = YOUR_FIREBASE_FUNCTIONS_PROD_URL_HERE
+
+// Note: OpenAI API key should NEVER be in the client
+// Set it in your backend with: firebase functions:config:set openai.key="your-key"
+
