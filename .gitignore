@@ -71,4 +71,8 @@ Artifacts/
 README.md
 TODO.md
 
+# Firebase Configuration (sensitive)
+**/GoogleService-Info.plist
+GoogleService-Info.plist
+
 
