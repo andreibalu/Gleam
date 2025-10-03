@@ -49,7 +49,12 @@ struct ContentView: View {
             .tag(3)
         }
         .onAppear {
-            if !didCompleteOnboarding { showOnboarding = true }
+            if ProcessInfo.processInfo.arguments.contains("--uitest-skip-onboarding") {
+                didCompleteOnboarding = true
+                showOnboarding = false
+            } else if !didCompleteOnboarding {
+                showOnboarding = true
+            }
         }
         .fullScreenCover(isPresented: $showOnboarding) {
             OnboardingView()

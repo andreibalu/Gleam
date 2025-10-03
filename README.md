@@ -172,7 +172,7 @@ firebase deploy --only functions
 ```bash
 # Run all tests
 xcodebuild test -scheme Gleam \
-  -destination 'platform=iOS Simulator,id=7A60F66C-2FAC-4007-A069-81CFEA4C2C02'
+  -destination 'platform=iOS Simulator,id=7A11EA66-5190-41ED-80B7-DBEB5CE9050B' # Iphone16Sim
 
 # Or in Xcode: Cmd+U
 ```

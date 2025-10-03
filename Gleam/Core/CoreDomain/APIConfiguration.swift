@@ -11,7 +11,7 @@ enum APIConfiguration {
     
     // MARK: - Configuration Values
     // 👇 REPLACE THIS with your Firebase Functions URL
-    static let firebaseFunctionsURL = "YOUR_FIREBASE_FUNCTIONS_URL_HERE"
+    static let firebaseFunctionsURL = "https://analyze-a7vtvf6tua-uc.a.run.app"
     
     // MARK: - Computed Properties
     static var baseURL: URL {

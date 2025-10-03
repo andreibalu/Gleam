@@ -27,7 +27,7 @@ struct GleamApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .scanRepository(FakeScanRepository())
+                .scanRepository(RemoteScanRepository(httpClient: DefaultHTTPClient()))
         }
         .modelContainer(sharedModelContainer)
     }

@@ -67,4 +67,8 @@ Artifacts/
 *.simdevicelog
 *.simdeviceplist
 
+# Documentation (maintained locally)
+README.md
+TODO.md
+
 

@@ -1,0 +1,37 @@
+{
+  "configurations" : [
+    {
+      "id" : "09D0F27E-FE4D-4BD8-A428-0C0DF58771B5",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "performanceAntipatternCheckerEnabled" : true,
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:Gleam.xcodeproj",
+      "identifier" : "757E90EF2E8D2C6500BE57BC",
+      "name" : "Gleam"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : false,
+      "target" : {
+        "containerPath" : "container:Gleam.xcodeproj",
+        "identifier" : "757E90FE2E8D2C6700BE57BC",
+        "name" : "GleamTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:Gleam.xcodeproj",
+        "identifier" : "757E91082E8D2C6700BE57BC",
+        "name" : "GleamUITests"
+      }
+    }
+  ],
+  "version" : 1
+}
