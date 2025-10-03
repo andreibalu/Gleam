@@ -2,9 +2,10 @@ import SwiftUI
 
 struct HomeView: View {
     @Environment(\.scanRepository) private var scanRepository
+    @EnvironmentObject private var scanSession: ScanSession
     @State private var isScanning = false
     @State private var lastResult: ScanResult? = nil
-    var onScanTapped: () -> Void
+    @State private var showCamera = false
 
     var body: some View {
         ScrollView {
@@ -17,7 +18,9 @@ struct HomeView: View {
                 }
                 .padding(.top, AppSpacing.xl)
 
-                Button(action: onScanTapped) {
+                Button {
+                    showCamera = true
+                } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "camera.fill")
                         Text("Scan your smile")
@@ -35,8 +38,22 @@ struct HomeView: View {
             .padding(.horizontal, AppSpacing.m)
         }
         .background(AppColors.background.ignoresSafeArea())
+        .sheet(isPresented: $showCamera) {
+            CameraCaptureView { data in
+                scanSession.capturedImageData = data
+                showCamera = false
+            }
+            .accessibilityIdentifier("camera_sheet")
+            .ignoresSafeArea()
+        }
         .task {
             do { lastResult = try await scanRepository.fetchLatest() } catch { }
+        }
+        .onChange(of: scanSession.shouldOpenCamera) { _, shouldOpen in
+            if shouldOpen {
+                showCamera = true
+                scanSession.shouldOpenCamera = false
+            }
         }
     }
 }

@@ -4,6 +4,7 @@ import UIKit
 
 struct ScanView: View {
     @Environment(\.scanRepository) private var scanRepository
+    @EnvironmentObject private var scanSession: ScanSession
     @State private var photoItem: PhotosPickerItem? = nil
     @State private var selectedImageData: Data? = nil
     @State private var isAnalyzing = false
@@ -26,19 +27,54 @@ struct ScanView: View {
                     .overlay {
                         VStack(spacing: 8) {
                             Image(systemName: "photo.on.rectangle.angled").font(.largeTitle)
-                            Text("Pick a photo")
+                            Text("No photo selected")
                         }
                         .foregroundStyle(.secondary)
                     }
             }
 
-            PhotosPicker(selection: $photoItem, matching: .images) {
-                Text("Choose Photo")
+            if selectedImageData == nil {
+                Button {
+                    scanSession.shouldOpenCamera = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "camera.fill")
+                        Text("Take photo")
+                    }
                     .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(PrimaryButtonStyle())
-            .onChange(of: photoItem) { _, newItem in
-                Task { await loadImage(from: newItem) }
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .accessibilityIdentifier("scan_take_photo_button")
+
+                PhotosPicker(selection: $photoItem, matching: .images) {
+                    Text("Choose from library")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                .onChange(of: photoItem) { _, newItem in
+                    Task { await loadImage(from: newItem) }
+                }
+            } else {
+                Button {
+                    scanSession.shouldOpenCamera = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "camera.fill")
+                        Text("Take a new photo")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .accessibilityIdentifier("scan_take_new_photo_button")
+
+                PhotosPicker(selection: $photoItem, matching: .images) {
+                    Text("Choose different photo")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                .onChange(of: photoItem) { _, newItem in
+                    Task { await loadImage(from: newItem) }
+                }
             }
 
             Button("Analyze") {
@@ -53,6 +89,12 @@ struct ScanView: View {
         .padding()
         .overlay {
             if isAnalyzing { ProgressView("Analyzing...") }
+        }
+        .onAppear {
+            if let capturedData = scanSession.capturedImageData {
+                selectedImageData = capturedData
+                scanSession.capturedImageData = nil
+            }
         }
     }
 

@@ -11,6 +11,8 @@ import PhotosUI
 
 @main
 struct GleamApp: App {
+    @StateObject private var scanSession = ScanSession()
+    
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Item.self,
@@ -28,6 +30,7 @@ struct GleamApp: App {
         WindowGroup {
             ContentView()
                 .scanRepository(RemoteScanRepository(httpClient: DefaultHTTPClient()))
+                .environmentObject(scanSession)
         }
         .modelContainer(sharedModelContainer)
     }

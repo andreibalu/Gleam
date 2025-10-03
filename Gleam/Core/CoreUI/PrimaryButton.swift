@@ -13,4 +13,17 @@ struct PrimaryButtonStyle: ButtonStyle {
     }
 }
 
+struct SecondaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+            .foregroundStyle(AppColors.primary)
+            .background(AppColors.card)
+            .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
+            .opacity(configuration.isPressed ? 0.85 : 1)
+    }
+}
+
 

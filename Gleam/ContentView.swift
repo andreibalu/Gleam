@@ -9,6 +9,7 @@ import SwiftUI
 import SwiftData
 
 struct ContentView: View {
+    @EnvironmentObject private var scanSession: ScanSession
     @State private var selectedTab: Int = 0
     @State private var navigationPath: [ScanResult] = []
     @State private var showOnboarding: Bool = false
@@ -17,12 +18,10 @@ struct ContentView: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             NavigationStack(path: $navigationPath) {
-                HomeView {
-                    selectedTab = 1
-                }
-                .navigationDestination(for: ScanResult.self) { result in
-                    ResultsView(result: result)
-                }
+                HomeView()
+                    .navigationDestination(for: ScanResult.self) { result in
+                        ResultsView(result: result)
+                    }
             }
             .tabItem { Label("Home", systemImage: "house") }
             .tag(0)
@@ -58,6 +57,16 @@ struct ContentView: View {
         }
         .fullScreenCover(isPresented: $showOnboarding) {
             OnboardingView()
+        }
+        .onChange(of: scanSession.shouldOpenCamera) { _, shouldOpen in
+            if shouldOpen {
+                selectedTab = 0
+            }
+        }
+        .onChange(of: scanSession.capturedImageData) { _, data in
+            if data != nil {
+                selectedTab = 1
+            }
         }
     }
 }

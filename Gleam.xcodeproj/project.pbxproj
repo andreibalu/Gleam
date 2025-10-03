@@ -24,7 +24,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		757E0DC22E8FED5900CB1D31 /* Gleam.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = file; path = Gleam.xctestplan; sourceTree = "<group>"; };
+		757E0DC22E8FED5900CB1D31 /* Gleam.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = Gleam.xctestplan; sourceTree = "<group>"; };
 		757E90F02E8D2C6500BE57BC /* Gleam.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Gleam.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		757E90FF2E8D2C6700BE57BC /* GleamTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GleamTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		757E91092E8D2C6700BE57BC /* GleamUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GleamUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -403,6 +403,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_API_BASE_URL = "$(API_BASE_URL)";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Let Gleam capture your smile in order to scan and create a plan, if needed";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -436,6 +437,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_API_BASE_URL = "$(API_BASE_URL)";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Let Gleam capture your smile in order to scan and create a plan, if needed";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
