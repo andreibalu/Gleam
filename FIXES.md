@@ -19,12 +19,12 @@
 - `ContentView` now re-presents onboarding whenever the flag flips back to false.
 - UI tests reset persisted history when skipping onboarding to guarantee empty state.
 
-### 5) Onboarding: guided capture → preview → loading → auth → handoff to Scan
+### 5) Onboarding: guided capture → preview → loading → Google auth → handoff to Scan
 - **Goal**: Replace the static 3-page onboarding with an interactive flow:
   1. Show a large "Scan your smile" button that opens the camera.
   2. After capture, show a preview of the photo and a primary "Make them Gleam" button.
   3. On tap, show a minimal, elegant loading animation while preparing auth.
-  4. Prompt the user to sign in (Apple and Google). After success, complete onboarding.
+  4. Prompt the user to sign in with Google (Apple Sign In deferred until developer account available). After success, complete onboarding.
   5. Handoff: ensure the captured image appears in the Scan tab ready for "Analyze".
 - **Agent must do**:
   - UI/Flow:
@@ -32,8 +32,6 @@
     - Reuse `CameraCaptureView` for capture; store data in `ScanSession`.
     - Add a minimalist animation view (e.g., `GleamLoadingView`) matching the app style.
   - Auth integration:
-    - Add Sign in with Apple using `AuthenticationServices`.
-      - Enable the capability in the target; handle nonce and token exchange.
     - Add Google Sign-In (SPM) and Firebase Auth (SPM) for unified auth.
       - Add SPM deps: `FirebaseAuth`, `GoogleSignIn` (or `GoogleSignInSwift`), initialize Firebase in `GleamApp`.
       - Acquire ID token and persist session; expose via `AuthRepository` (`currentUserId`, `authToken`).
@@ -44,19 +42,15 @@
     - Ensure `NSCameraUsageDescription` exists; if using photo library fallback, include `NSPhotoLibraryAddUsageDescription` if saving.
   - QA/Acceptance:
     - Capture works on device; simulator falls back gracefully.
-    - Auth (Apple/Google) succeeds and tokens are sent to backend on analyze/history requests.
+    - Google auth succeeds and tokens are sent to backend on analyze/history requests.
     - After onboarding, the captured photo is visible in `ScanView` and "Analyze" works end-to-end.
   - Manual steps:
-    - Apple Sign In:
-      - In Apple Developer portal, enable Sign in with Apple for the app’s bundle identifier.
-      - In Xcode, add the "Sign in with Apple" capability to the target.
     - Google Sign-In:
       - In Google Cloud Console, create an iOS OAuth client for the app bundle id and download/update `GoogleService-Info.plist`.
       - In Xcode, add the Reverse Client ID as a URL Scheme (from `GoogleService-Info.plist`).
       - In Firebase Console, enable Google provider under Authentication.
     - Firebase setup:
       - Ensure Firebase is initialized on app launch (requires valid `GoogleService-Info.plist` in the app target).
-      - In Firebase Console, enable Apple provider under Authentication.
     - Backend auth enforcement:
       - Update and deploy Cloud Functions to verify Firebase ID tokens on protected endpoints.
       - If using Firestore direct access, update and deploy security rules to require authentication.

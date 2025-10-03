@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 protocol ScanRepository {
     func analyze(imageData: Data) async throws -> ScanResult
@@ -13,6 +14,7 @@ protocol HistoryRepository {
 protocol AuthRepository {
     func currentUserId() async -> String?
     func authToken() async throws -> String?
+    func signInWithGoogle(presentingController: UIViewController) async throws
 }
 
 

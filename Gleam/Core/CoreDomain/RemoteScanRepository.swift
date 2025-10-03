@@ -2,9 +2,11 @@ import Foundation
 
 struct RemoteScanRepository: ScanRepository {
     private let httpClient: HTTPClient
+    private let authRepository: any AuthRepository
 
-    init(httpClient: HTTPClient) {
+    init(httpClient: HTTPClient, authRepository: any AuthRepository) {
         self.httpClient = httpClient
+        self.authRepository = authRepository
     }
 
     func analyze(imageData: Data) async throws -> ScanResult {
@@ -12,12 +14,13 @@ struct RemoteScanRepository: ScanRepository {
 
         let url = APIConfiguration.baseURL.appendingPathComponent("analyze")
         let payload = AnalyzePayload(image: imageData.base64EncodedString())
+        let headers = try await authorizationHeaders()
 
         do {
             let response: AnalyzeResponse = try await httpClient.send(
                 url: url,
                 method: "POST",
-                headers: [:],
+                headers: headers,
                 body: payload
             )
             return response.result
@@ -28,12 +31,13 @@ struct RemoteScanRepository: ScanRepository {
 
     func fetchLatest() async throws -> ScanResult? {
         let url = APIConfiguration.baseURL.appendingPathComponent("history/latest")
+        let headers = try await authorizationHeaders()
 
         do {
             let response: AnalyzeResponse = try await httpClient.send(
                 url: url,
                 method: "GET",
-                headers: [:],
+                headers: headers,
                 body: Optional<EmptyPayload>.none
             )
             return response.result
@@ -72,6 +76,13 @@ struct RemoteScanRepository: ScanRepository {
         }
 
         return .unknown
+    }
+
+    private func authorizationHeaders() async throws -> [String: String] {
+        if let token = try await authRepository.authToken(), !token.isEmpty {
+            return ["Authorization": "Bearer \(token)"]
+        }
+        return [:]
     }
 }
 
