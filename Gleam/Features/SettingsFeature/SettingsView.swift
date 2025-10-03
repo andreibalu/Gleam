@@ -1,7 +1,10 @@
 import SwiftUI
 
 struct SettingsView: View {
+    @EnvironmentObject private var scanSession: ScanSession
     @AppStorage("isDarkMode") private var isDarkMode: Bool = false
+    @AppStorage("didCompleteOnboarding") private var didCompleteOnboarding: Bool = false
+    @State private var showResetAlert: Bool = false
     var body: some View {
         Form {
             Section(header: Text("Appearance")) {
@@ -13,8 +16,24 @@ struct SettingsView: View {
                 Link("Privacy Policy", destination: URL(string: "https://example.com/privacy")!)
                 Link("Terms of Service", destination: URL(string: "https://example.com/terms")!)
             }
+            Section(header: Text("Onboarding")) {
+                Button(role: .destructive) {
+                    showResetAlert = true
+                } label: {
+                    Text("Reset onboarding")
+                }
+            }
         }
         .navigationTitle("Settings")
+        .alert("Reset onboarding?", isPresented: $showResetAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("Reset", role: .destructive) {
+                didCompleteOnboarding = false
+                scanSession.reset()
+            }
+        } message: {
+            Text("You'll see onboarding the next time you use Gleam.")
+        }
     }
 }
 

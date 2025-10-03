@@ -33,6 +33,13 @@ actor PersistentHistoryRepository: HistoryRepository {
         try? persistStorage()
     }
 
+    func resetAll() {
+        storage.removeAll()
+        if fileManager.fileExists(atPath: storageURL.path) {
+            try? fileManager.removeItem(at: storageURL)
+        }
+    }
+
     private func persistStorage() throws {
         let directory = storageURL.deletingLastPathComponent()
         if !fileManager.fileExists(atPath: directory.path) {

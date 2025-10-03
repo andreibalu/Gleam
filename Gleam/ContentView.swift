@@ -52,12 +52,20 @@ struct ContentView: View {
             if ProcessInfo.processInfo.arguments.contains("--uitest-skip-onboarding") {
                 didCompleteOnboarding = true
                 showOnboarding = false
-            } else if !didCompleteOnboarding {
-                showOnboarding = true
+            } else {
+                showOnboarding = !didCompleteOnboarding
             }
         }
         .fullScreenCover(isPresented: $showOnboarding) {
             OnboardingView()
+        }
+        .onChange(of: didCompleteOnboarding) { _, completed in
+            if completed {
+                showOnboarding = false
+            } else {
+                scanSession.reset()
+                showOnboarding = true
+            }
         }
         .onChange(of: scanSession.shouldOpenCamera) { _, shouldOpen in
             if shouldOpen {

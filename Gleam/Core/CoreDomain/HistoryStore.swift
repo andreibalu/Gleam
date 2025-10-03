@@ -9,6 +9,7 @@ final class HistoryStore: ObservableObject {
     private let idGenerator: () -> String
     private let dateProvider: () -> Date
     private let appendHandler: (HistoryItem) -> Void
+    private var didResetForUITests = false
 
     init(
         repository: any HistoryRepository,
@@ -24,8 +25,16 @@ final class HistoryStore: ObservableObject {
 
     func load() async {
         do {
-            let fetched = try await repository.list()
-            items = fetched.sorted { $0.createdAt > $1.createdAt }
+            if ProcessInfo.processInfo.arguments.contains("--uitest-skip-onboarding"),
+               !didResetForUITests,
+               let persistentRepository = repository as? PersistentHistoryRepository {
+                await persistentRepository.resetAll()
+                items = []
+                didResetForUITests = true
+            } else {
+                let fetched = try await repository.list()
+                items = fetched.sorted { $0.createdAt > $1.createdAt }
+            }
         } catch { }
     }
 

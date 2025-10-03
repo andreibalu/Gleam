@@ -14,16 +14,10 @@
 - History tab now loads shared store, renders empty state, and supports swipe-to-delete.
 - New scan results append to the shared history immediately after analysis.
 
-### 4) Settings: add "Reset onboarding"
-- **Current**: `SettingsView` only has Appearance/Privacy; onboarding tracked by `@AppStorage("didCompleteOnboarding")`.
-- **Agent must do**:
-  - Add a new section to `SettingsView` with a destructive-styled "Reset onboarding" button.
-    - Action: set `didCompleteOnboarding = false`; optionally clear `ScanSession.capturedImageData`.
-    - Present a confirmation alert.
-  - `ContentView`: when `didCompleteOnboarding` becomes false, present `OnboardingView` via the existing fullScreenCover.
-  - QA: reopening app or toggling the flag immediately shows onboarding.
-  - Manual steps:
-    - None.
+### 4) Settings: add "Reset onboarding" ✅
+- Added destructive Reset onboarding button with confirmation alert in `SettingsView` that clears onboarding flag and scan session.
+- `ContentView` now re-presents onboarding whenever the flag flips back to false.
+- UI tests reset persisted history when skipping onboarding to guarantee empty state.
 
 ### 5) Onboarding: guided capture → preview → loading → auth → handoff to Scan
 - **Goal**: Replace the static 3-page onboarding with an interactive flow:
