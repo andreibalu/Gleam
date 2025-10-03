@@ -11,9 +11,9 @@ SwiftUI iOS app that analyzes teeth photos using OpenAI's GPT-4o-mini vision mod
 
 ### Prerequisites
 - Xcode 16.0+ with iOS 18.0 SDK
-- iOS Simulator: `Iphone17ProSimulator` (UUID: `7A60F66C-2FAC-4007-A069-81CFEA4C2C02`)
-- Firebase account (for Auth, Firestore, Storage, Cloud Functions)
-- OpenAI API key (stored in backend only)
+- iOS Simulator: `Iphone16Sim` (UUID: `7A11EA66-5190-41ED-80B7-DBEB5CE9050B`)
+- Firebase project with Functions, Firestore, Storage enabled
+- OpenAI API key (stored in Firebase Functions secret)
 
 ### Build & Run
 
@@ -23,15 +23,15 @@ open Gleam.xcodeproj
 
 # Or build via CLI
 xcodebuild -scheme Gleam \
-  -destination 'platform=iOS Simulator,id=7A60F66C-2FAC-4007-A069-81CFEA4C2C02' \
+  -destination 'platform=iOS Simulator,id=7A11EA66-5190-41ED-80B7-DBEB5CE9050B' \
   build
 ```
 
 ### Current State
 - ✅ Complete UI/UX (Onboarding, Scan, Results, History, Settings)
-- ✅ Image compression (1024px @ 0.7 quality)
-- ✅ API configuration ready
-- ⏳ Uses mock data (backend integration pending)
+- ✅ RemoteScanRepository wired to Firebase Functions backend
+- ✅ OpenAI-powered analysis results persisted to Firestore
+- 🔜 Optional hardening (auth, regression checklist) tracked in `TODO.md`
 
 ---
 
@@ -66,104 +66,10 @@ Gleam/
 
 ## Backend Integration
 
-### Firebase Setup
-
-1. **Create Firebase Project**
-   - Go to [Firebase Console](https://console.firebase.google.com)
-   - Enable Authentication, Firestore, Storage
-
-2. **Firestore Security Rules**
-   ```javascript
-   rules_version = '2';
-   service cloud.firestore {
-     match /databases/{database}/documents {
-       match /users/{userId} { 
-         allow read, write: if request.auth != null && request.auth.uid == userId; 
-       }
-       match /scans/{scanId} { 
-         allow read, write: if request.auth != null && resource.data.userId == request.auth.uid; 
-       }
-     }
-   }
-   ```
-
-3. **Storage Security Rules**
-   ```javascript
-   rules_version = '2';
-   service firebase.storage {
-     match /b/{bucket}/o {
-       match /users/{userId}/{allPaths=**} { 
-         allow read, write: if request.auth != null && request.auth.uid == userId; 
-       }
-     }
-   }
-   ```
-
-### Cloud Functions with OpenAI
-
-**Deploy Functions:**
-```bash
-firebase init functions
-npm install openai firebase-admin
-```
-
-**Implement `/analyze` endpoint** (example):
-```javascript
-const functions = require('firebase-functions');
-const admin = require('firebase-admin');
-const OpenAI = require('openai');
-
-admin.initializeApp();
-const openai = new OpenAI({ apiKey: functions.config().openai.key });
-
-exports.analyze = functions.https.onRequest(async (req, res) => {
-  if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
-  
-  const { image } = req.body; // Base64 image data
-  const userId = req.user.uid; // From verified ID token
-  
-  const response = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
-    messages: [
-      { 
-        role: 'system', 
-        content: 'You are a cosmetic dental assistant. Output only valid JSON per ScanResult schema.' 
-      },
-      { 
-        role: 'user', 
-        content: [
-          { type: 'text', text: 'Analyze teeth photo for whitening recommendations.' },
-          { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${image}` } }
-        ] 
-      }
-    ],
-    response_format: { type: 'json_object' },
-    temperature: 0.2
-  });
-  
-  const result = JSON.parse(response.choices[0].message.content);
-  
-  // Store in Firestore
-  await admin.firestore().collection('scans').add({
-    userId,
-    ...result,
-    createdAt: admin.firestore.FieldValue.serverTimestamp()
-  });
-  
-  res.json({ result });
-});
-```
-
-**Set OpenAI Key:**
-```bash
-firebase functions:config:set openai.key="sk-your-openai-api-key"
-firebase deploy --only functions
-```
-
-**Configure iOS App:**
-- Edit `Gleam/Core/CoreDomain/APIConfiguration.swift` line 14
-- Replace `YOUR_FIREBASE_FUNCTIONS_URL_HERE` with your Functions URL
-- Example: `https://us-central1-gleam-prod.cloudfunctions.net`
+- Cloud Functions source lives in [`functions/src/index.ts`](functions/src/index.ts) (TypeScript, deployed via `firebase deploy`).
+- Secrets such as `OPENAI_API_KEY` are stored with `firebase functions:secrets:set` and injected at runtime.
+- The iOS app uses `RemoteScanRepository` + `DefaultHTTPClient` to call `/analyze` and `/history/latest`; stubs are in `Core/CoreDomain`.
+- Detailed setup and deployment checklist is maintained in [`TODO.md`](TODO.md).
 
 ---
 
@@ -172,7 +78,7 @@ firebase deploy --only functions
 ```bash
 # Run all tests
 xcodebuild test -scheme Gleam \
-  -destination 'platform=iOS Simulator,id=7A11EA66-5190-41ED-80B7-DBEB5CE9050B' # Iphone16Sim
+  -destination 'platform=iOS Simulator,id=7A11EA66-5190-41ED-80B7-DBEB5CE9050B'
 
 # Or in Xcode: Cmd+U
 ```
@@ -240,10 +146,10 @@ struct Recommendations: Codable, Equatable {
 **Simulator Issues:**
 ```bash
 # Boot simulator manually
-xcrun simctl boot 7A60F66C-2FAC-4007-A069-81CFEA4C2C02
+xcrun simctl boot 7A11EA66-5190-41ED-80B7-DBEB5CE9050B
 
 # Erase if corrupted
-xcrun simctl erase 7A60F66C-2FAC-4007-A069-81CFEA4C2C02
+xcrun simctl erase 7A11EA66-5190-41ED-80B7-DBEB5CE9050B
 ```
 
 **API Errors:**
@@ -258,10 +164,8 @@ xcrun simctl erase 7A60F66C-2FAC-4007-A069-81CFEA4C2C02
 See [TODO.md](TODO.md) for remaining integration tasks.
 
 Key items:
-1. Configure Firebase Functions URL in `APIConfiguration.swift`
-2. Deploy Firebase Functions with OpenAI integration
-3. Replace `FakeScanRepository` with `RemoteScanRepository`
-4. (Optional) Add Firebase Authentication
+1. Finish Phase 3 regression checklist (see `TODO.md`).
+2. Wire up optional authentication once backend enforces per-user access.
 
 ---
 
