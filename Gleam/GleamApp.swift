@@ -15,10 +15,12 @@ struct GleamApp: App {
     @StateObject private var historyStore: HistoryStore
 
     init() {
-        let historyRepository = InMemoryHistoryRepository()
+        let historyRepository = PersistentHistoryRepository()
         _historyStore = StateObject(wrappedValue: HistoryStore(
             repository: historyRepository,
-            appendHandler: { historyRepository.insert($0) }
+            appendHandler: { item in
+                Task { await historyRepository.insert(item) }
+            }
         ))
     }
     
