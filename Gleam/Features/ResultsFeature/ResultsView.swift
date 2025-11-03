@@ -6,16 +6,18 @@ struct ResultsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppSpacing.l) {
-                ScoreRing(score: result.whitenessScore)
-                    .frame(height: 180)
+                ScoreRing(score: normalizedScore(result.whitenessScore))
+                    .frame(height: 200)
                     .frame(maxWidth: .infinity)
 
-                GroupBox("Shade & Confidence") {
+                GroupBox("Shade Classification") {
                     HStack {
-                        Label(result.shade, systemImage: "eyedropper")
+                        Label(shadeDescription, systemImage: "eyedropper")
+                            .font(.subheadline)
                         Spacer()
-                        Text("\(Int(result.confidence * 100))%")
+                        Text(result.shade)
                             .foregroundStyle(.secondary)
+                            .font(.caption)
                     }
                 }
 
@@ -54,6 +56,22 @@ struct ResultsView: View {
         .navigationTitle("Results")
         .background(AppColors.background.ignoresSafeArea())
     }
+    
+    private func normalizedScore(_ rawScore: Int) -> Double {
+        // Convert 0-100 to 0-10 scale
+        return Double(rawScore) / 10.0
+    }
+    
+    private var shadeDescription: String {
+        // Simplified shade description
+        let shadeMap: [String: String] = [
+            "A1": "Very Light", "A2": "Light", "A3": "Medium-Light",
+            "B1": "Light", "B2": "Medium-Light", "B3": "Medium",
+            "C1": "Light", "C2": "Medium", "C3": "Medium-Dark",
+            "D2": "Medium", "D3": "Medium-Dark", "D4": "Dark"
+        ]
+        return shadeMap[result.shade] ?? result.shade
+    }
 }
 
 private struct PlanSection: View {
@@ -76,19 +94,76 @@ private struct PlanSection: View {
 }
 
 private struct ScoreRing: View {
-    let score: Int
+    let score: Double // 0-10 scale
+    @State private var animatedScore: Double = 0
+    
     var body: some View {
         ZStack {
             Circle()
-                .stroke(Color.gray.opacity(0.2), lineWidth: 16)
+                .stroke(Color.gray.opacity(0.15), lineWidth: 20)
             Circle()
-                .trim(from: 0, to: CGFloat(max(0, min(1, Double(score)/100))))
-                .stroke(AppColors.primary, style: StrokeStyle(lineWidth: 16, lineCap: .round))
+                .trim(from: 0, to: min(1.0, animatedScore / 10.0))
+                .stroke(scoreGradient, style: StrokeStyle(lineWidth: 20, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-                .animation(.easeInOut(duration: 0.8), value: score)
-            Text("\(score)")
-                .font(.largeTitle).bold()
+                .animation(.spring(response: 1.0, dampingFraction: 0.7), value: animatedScore)
+            
+            VStack(spacing: 4) {
+                Text(String(format: "%.1f", animatedScore))
+                    .font(.system(size: 64, weight: .bold, design: .rounded))
+                    .foregroundStyle(scoreGradient)
+                    .contentTransition(.numericText(value: animatedScore))
+                    .animation(.spring(response: 0.8, dampingFraction: 0.7), value: animatedScore)
+                
+                Text("/ 10")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                
+                Text(scoreLabel)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(scoreLabelColor)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                    .background(scoreLabelColor.opacity(0.15))
+                    .clipShape(Capsule())
+                    .padding(.top, 4)
+            }
         }
+        .onAppear {
+            withAnimation(.spring(response: 1.0, dampingFraction: 0.7).delay(0.2)) {
+                animatedScore = score
+            }
+        }
+    }
+    
+    private var scoreGradient: LinearGradient {
+        let colors: [Color]
+        if animatedScore >= 8.0 {
+            colors = [.green, .mint]
+        } else if animatedScore >= 6.0 {
+            colors = [.blue, .cyan]
+        } else if animatedScore >= 4.0 {
+            colors = [.orange, .yellow]
+        } else {
+            colors = [.red, .orange]
+        }
+        return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+    
+    private var scoreLabel: String {
+        if animatedScore >= 9.0 { return "✨ Brilliant" }
+        if animatedScore >= 8.0 { return "🌟 Excellent" }
+        if animatedScore >= 7.0 { return "🎯 Great" }
+        if animatedScore >= 6.0 { return "👍 Good" }
+        if animatedScore >= 5.0 { return "📈 Improving" }
+        if animatedScore >= 3.0 { return "💪 Keep Going" }
+        return "🚀 Start Here"
+    }
+    
+    private var scoreLabelColor: Color {
+        if animatedScore >= 8.0 { return .green }
+        if animatedScore >= 6.0 { return .blue }
+        if animatedScore >= 4.0 { return .orange }
+        return .red
     }
 }
 

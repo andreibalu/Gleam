@@ -4,6 +4,8 @@ import Foundation
 @MainActor
 final class HistoryStore: ObservableObject {
     @Published private(set) var items: [HistoryItem] = []
+    @Published private(set) var currentStreak: Int = 0
+    @Published private(set) var bestStreak: Int = 0
 
     private let repository: any HistoryRepository
     private let idGenerator: () -> String
@@ -34,6 +36,7 @@ final class HistoryStore: ObservableObject {
             } else {
                 let fetched = try await repository.list()
                 items = fetched.sorted { $0.createdAt > $1.createdAt }
+                calculateStreaks()
             }
         } catch { }
     }
@@ -53,5 +56,78 @@ final class HistoryStore: ObservableObject {
         )
         appendHandler(newItem)
         items.insert(newItem, at: 0)
+        calculateStreaks()
+    }
+    
+    private func calculateStreaks() {
+        guard !items.isEmpty else {
+            currentStreak = 0
+            bestStreak = 0
+            return
+        }
+        
+        let calendar = Calendar.current
+        let sortedItems = items.sorted { $0.createdAt > $1.createdAt }
+        
+        // Calculate current streak
+        var streak = 0
+        var lastDate: Date? = nil
+        let today = calendar.startOfDay(for: dateProvider())
+        
+        for item in sortedItems {
+            let itemDay = calendar.startOfDay(for: item.createdAt)
+            
+            if lastDate == nil {
+                // First item - check if it's today or yesterday
+                let daysDiff = calendar.dateComponents([.day], from: itemDay, to: today).day ?? 0
+                if daysDiff <= 1 {
+                    streak = 1
+                    lastDate = itemDay
+                } else {
+                    break
+                }
+            } else if let previous = lastDate {
+                let daysDiff = calendar.dateComponents([.day], from: itemDay, to: previous).day ?? 0
+                if daysDiff == 1 {
+                    // Consecutive day
+                    streak += 1
+                    lastDate = itemDay
+                } else if daysDiff == 0 {
+                    // Same day, continue
+                    continue
+                } else {
+                    // Gap in streak
+                    break
+                }
+            }
+        }
+        
+        currentStreak = streak
+        
+        // Calculate best streak
+        var tempBestStreak = 0
+        var tempCurrentStreak = 0
+        var previousDay: Date? = nil
+        
+        for item in sortedItems.reversed() {
+            let itemDay = calendar.startOfDay(for: item.createdAt)
+            
+            if let previous = previousDay {
+                let daysDiff = calendar.dateComponents([.day], from: previous, to: itemDay).day ?? 0
+                if daysDiff == 1 {
+                    tempCurrentStreak += 1
+                } else if daysDiff == 0 {
+                    continue
+                } else {
+                    tempBestStreak = max(tempBestStreak, tempCurrentStreak)
+                    tempCurrentStreak = 1
+                }
+            } else {
+                tempCurrentStreak = 1
+            }
+            previousDay = itemDay
+        }
+        tempBestStreak = max(tempBestStreak, tempCurrentStreak)
+        bestStreak = max(tempBestStreak, currentStreak)
     }
 }
