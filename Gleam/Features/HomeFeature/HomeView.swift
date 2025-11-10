@@ -387,23 +387,5 @@ private struct ProgressInsight: View {
     }
 }
 
-// MARK: - Gamified Button Style
-private struct GamifiedButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(.white)
-            .background(
-                LinearGradient(
-                    colors: [.blue, .purple],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-            )
-            .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
-            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
-            .shadow(color: .blue.opacity(0.3), radius: 10, x: 0, y: 5)
-            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
-    }
-}
 
 

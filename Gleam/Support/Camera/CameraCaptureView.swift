@@ -21,6 +21,7 @@ struct CameraCaptureView: UIViewControllerRepresentable {
             let picker = UIImagePickerController()
             picker.sourceType = .camera
             picker.cameraCaptureMode = .photo
+            picker.cameraDevice = .front  // Use front-facing (selfie) camera
             picker.delegate = context.coordinator
             return picker
         } else {

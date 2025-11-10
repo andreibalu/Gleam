@@ -8,6 +8,7 @@ final class HistoryStore: ObservableObject {
     @Published private(set) var bestStreak: Int = 0
 
     private let repository: any HistoryRepository
+    private let imageStorage = LocalImageStorage()
     private let idGenerator: () -> String
     private let dateProvider: () -> Date
     private let appendHandler: (HistoryItem) -> Void
@@ -44,19 +45,37 @@ final class HistoryStore: ObservableObject {
     func delete(_ item: HistoryItem) async {
         do {
             try await repository.delete(id: item.id)
+            // Delete associated image
+            await imageStorage.deleteImage(for: item.id)
             items.removeAll { $0.id == item.id }
         } catch { }
     }
 
-    func append(_ result: ScanResult) {
+    func append(_ result: ScanResult, imageData: Data?) {
         let newItem = HistoryItem(
             id: idGenerator(),
             createdAt: dateProvider(),
             result: result
         )
+        
+        // Save image locally if provided
+        if let imageData = imageData {
+            Task {
+                do {
+                    try await imageStorage.saveImage(imageData, for: newItem.id)
+                } catch {
+                    // Silently fail - image storage is optional
+                }
+            }
+        }
+        
         appendHandler(newItem)
         items.insert(newItem, at: 0)
         calculateStreaks()
+    }
+    
+    func loadImage(for historyItemId: String) async -> Data? {
+        await imageStorage.loadImage(for: historyItemId)
     }
     
     private func calculateStreaks() {

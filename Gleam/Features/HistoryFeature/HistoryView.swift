@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct HistoryView: View {
     @EnvironmentObject private var historyStore: HistoryStore
@@ -60,8 +61,8 @@ struct HistoryView: View {
                     // History Items
                     Section {
                         ForEach(historyStore.items) { item in
-                            NavigationLink(destination: ResultsView(result: item.result)) {
-                                HistoryRowView(result: item.result, createdAt: item.createdAt)
+                            NavigationLink(value: item.result) {
+                                HistoryRowView(item: item, historyStore: historyStore)
                             }
                         }
                         .onDelete(perform: delete)
@@ -85,15 +86,16 @@ struct HistoryView: View {
 }
 
 private struct HistoryRowView: View {
-    let result: ScanResult
-    let createdAt: Date
-
+    let item: HistoryItem
+    let historyStore: HistoryStore
+    @State private var imageData: Data? = nil
+    
     private var formattedDate: String {
-        DateFormatter.historyFormatter.string(from: createdAt)
+        DateFormatter.historyFormatter.string(from: item.createdAt)
     }
     
     private var normalizedScore: Double {
-        Double(result.whitenessScore) / 10.0
+        Double(item.result.whitenessScore) / 10.0
     }
     
     private var shadeDescription: String {
@@ -103,7 +105,7 @@ private struct HistoryRowView: View {
             "C1": "Light", "C2": "Medium", "C3": "Medium-Dark",
             "D2": "Medium", "D3": "Medium-Dark", "D4": "Dark"
         ]
-        return shadeMap[result.shade] ?? result.shade
+        return shadeMap[item.result.shade] ?? item.result.shade
     }
 
     var body: some View {
@@ -138,8 +140,35 @@ private struct HistoryRowView: View {
             }
             
             Spacer()
+            
+            // Scan Photo
+            if let imageData = imageData, let uiImage = UIImage(data: imageData) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 60, height: 60)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                    }
+            } else {
+                // Placeholder when image not available
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.gray.opacity(0.1))
+                    .frame(width: 60, height: 60)
+                    .overlay {
+                        Image(systemName: "photo")
+                            .foregroundStyle(.gray.opacity(0.5))
+                            .font(.caption)
+                    }
+            }
         }
         .padding(.vertical, 4)
+        .task {
+            // Load image asynchronously
+            imageData = await historyStore.loadImage(for: item.id)
+        }
     }
     
     private var scoreColor: Color {
