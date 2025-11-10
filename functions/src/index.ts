@@ -89,6 +89,16 @@ interface PlanResponsePayload {
   plan: Recommendations;
 }
 
+const LIFESTYLE_TAG_LABELS: Record<string, string> = {
+  coffee: "coffee",
+  red_wine: "red wine",
+  cola: "cola & soda",
+  tea: "tea",
+  smoking: "smoking",
+};
+
+const KNOWN_LIFESTYLE_TAG_IDS = Object.keys(LIFESTYLE_TAG_LABELS);
+
 /**
  * Analyze endpoint: receives base64 image, returns dental analysis
  */
@@ -106,10 +116,12 @@ export const analyze = onRequest(
         image,
         tags: rawTags,
         previousTakeaways: rawPreviousTakeaways,
+        tagHistory: rawTagHistory,
       } = req.body as {
         image?: string;
         tags?: unknown;
         previousTakeaways?: unknown;
+        tagHistory?: unknown;
       };
 
       if (!image || typeof image !== "string") {
@@ -133,6 +145,86 @@ export const analyze = onRequest(
             .slice(0, 5) :
           [];
 
+      const tagHistory =
+        Array.isArray(rawTagHistory) ?
+          (rawTagHistory as unknown[])
+            .slice(0, 5)
+            .map((entry) => {
+              if (!Array.isArray(entry)) {
+                return [];
+              }
+              return (entry as unknown[])
+                .map((tag) =>
+                  typeof tag === "string" ? tag.trim() : ""
+                )
+                .filter((tag) => tag.length > 0);
+            }) :
+          [];
+
+      const tagHistorySummaries = tagHistory.length > 0 ?
+        tagHistory.map((entry, index) => {
+          const labelIndex = index + 1;
+          if (entry.length === 0) {
+            return `Scan ${labelIndex}: no lifestyle tags selected`;
+          }
+          const tagsText = entry
+            .map((tagId) => LIFESTYLE_TAG_LABELS[tagId] ?? tagId)
+            .join(", ");
+          return `Scan ${labelIndex}: ${tagsText}`;
+        }) :
+        [];
+
+      const tagUsageCounts = KNOWN_LIFESTYLE_TAG_IDS.reduce(
+        (accumulator, tagId) => {
+          accumulator[tagId] = 0;
+          return accumulator;
+        },
+        {} as Record<string, number>
+      );
+
+      tagHistory.forEach((entry) => {
+        const seen = new Set(entry);
+        seen.forEach((tagId) => {
+          if (tagUsageCounts[tagId] !== undefined) {
+            tagUsageCounts[tagId] += 1;
+          }
+        });
+      });
+
+      const totalTagSamples = tagHistory.length;
+
+      const tagUsageSummary = totalTagSamples > 0 ?
+        KNOWN_LIFESTYLE_TAG_IDS
+          .map((tagId) => {
+            const friendly = LIFESTYLE_TAG_LABELS[tagId] ?? tagId;
+            const count = tagUsageCounts[tagId] ?? 0;
+            return `${friendly}: ${count}/${totalTagSamples}`;
+          }).join(", ") :
+        "";
+
+      const positiveStreaks = totalTagSamples > 0 ?
+        KNOWN_LIFESTYLE_TAG_IDS
+          .filter((tagId) => (tagUsageCounts[tagId] ?? 0) === 0)
+          .map((tagId) => LIFESTYLE_TAG_LABELS[tagId] ?? tagId) :
+        [];
+
+      const positiveHighlights = positiveStreaks.slice(0, 2);
+
+      const concernThreshold = totalTagSamples === 0 ?
+        0 :
+        Math.max(2, Math.ceil(totalTagSamples * 0.5));
+
+      const overusedTags = totalTagSamples > 0 ?
+        KNOWN_LIFESTYLE_TAG_IDS
+          .map((tagId) => ({
+            label: LIFESTYLE_TAG_LABELS[tagId] ?? tagId,
+            count: tagUsageCounts[tagId] ?? 0,
+          }))
+          .filter(({count}) => count >= concernThreshold) :
+        [];
+
+      const overusedHighlights = overusedTags.slice(0, 2);
+
       const userTextParts = [
         "Analyze this teeth photo for whitening insights. " +
         "Provide shade score, focus areas, and confidence level.",
@@ -145,10 +237,47 @@ export const analyze = onRequest(
         userTextParts.push("No lifestyle tags were selected.");
       }
 
+      if (tagHistorySummaries.length > 0) {
+        userTextParts.push(
+          `Lifestyle tag history (latest first): ${
+            tagHistorySummaries.join(" | ")
+          }.`
+        );
+      } else {
+        userTextParts.push(
+          "No recorded lifestyle tag history yet; " +
+          "treat this scan as a baseline."
+        );
+      }
+
+      if (tagUsageSummary.length > 0) {
+        userTextParts.push(
+          `Tag usage counts out of the last ${totalTagSamples} scans: ` +
+          `${tagUsageSummary}.`
+        );
+      }
+
+      if (positiveHighlights.length > 0) {
+        userTextParts.push(
+          `Celebrate streaks avoiding: ${positiveHighlights.join(", ")}.`
+        );
+      }
+
+      if (overusedHighlights.length > 0) {
+        userTextParts.push(
+          "Call out overused tags with gentle guidance: " +
+          overusedHighlights
+            .map(({label, count}) => `${label} (${count})`)
+            .join(", ") +
+          "."
+        );
+      }
+
       if (previousTakeaways.length > 0) {
         userTextParts.push(
           "Avoid repeating these recent personal takeaways: " +
-          `${previousTakeaways.join(" | ")}.`);
+          `${previousTakeaways.join(" | ")}.`
+        );
       } else {
         userTextParts.push(
           "This is the first personal takeaway for this streak.");
@@ -156,9 +285,26 @@ export const analyze = onRequest(
 
       const userText = userTextParts.join(" ");
 
+      const guidanceLines = [
+        "- Use Vita shade codes like A2 and keep it to one value.",
+        "- Use lifestyle tags (coffee, wine, etc.) throughout the analysis.",
+        "- Keep the personal takeaway energetic and concise.",
+        "  Aim for roughly 10 words.",
+        "  Fold in lifestyle tags and avoid repeating recent takeaways.",
+        "- Highlight lifestyle signals.",
+        "  Praise zero-use streaks and coach frequent tags.",
+        "  If no history exists, focus on sustaining bright habits.",
+        "- Two- or three-word takeaways are fine when momentum is the message.",
+        "- Keep each detected issue concise with key, severity, and next step.",
+        "- Set referralNeeded to true only when clinical follow-up is needed.",
+        "- Keep the disclaimer short and in plain language (max 22 words).",
+        "- Ensure confidence stays within 0.0 to 1.0 and reflects certainty.",
+      ].join("\n");
+
       logger.info("Processing dental scan analysis", {
         tags,
         previousTakeawaysCount: previousTakeaways.length,
+        tagHistorySamples: totalTagSamples,
       });
 
       // Call OpenAI GPT-4o-mini with vision
@@ -187,23 +333,7 @@ Return ONLY valid JSON that matches this schema exactly:
   "personalTakeaway": string
 }
 Guidance:
-- Use Vita shade notation (e.g., "A2") for "shade"; ` +
-              `keep it to the single code.
-- We will provide optional lifestyle tags (like coffee or red wine). ` +
-              `If present, factor them into your observations and issue notes.
-- The "personalTakeaway" must be a succinct, energetic line ` +
-              "(max 16 words) that does not repeat any of the provided " +
-              `recent takeaways.
-- You may write the "personalTakeaway" in as few as 2-3 words ` +
-              `when momentum is the message (e.g., "Keep going").
-- Each "detectedIssues" entry should use a concise key (e.g., "staining"), ` +
-              "a severity from the enum, and notes limited to two sentences " +
-              `with a clear next step.
-- Set "referralNeeded" to true only when clinical signs suggest ` +
-              `professional assessment (e.g., severe lesions, suspected decay).
-- Keep "disclaimer" short and written in plain language (max 22 words).
-- Always ensure "confidence" reflects true model certainty ` +
-              `between 0.0 and 1.0.
+${guidanceLines}
 `,
           },
           {
@@ -317,7 +447,7 @@ export const plan = onRequest(
       const body = (req.body ?? {}) as PlanRequestPayload;
       const history = Array.isArray(body.history) ?
         body.history
-          .slice(0, 3)
+          .slice(0, 5)
           .map((snapshot) => normalizeSnapshot(snapshot))
           .filter((snapshot): snapshot is PlanHistorySnapshot =>
             snapshot !== null) :
@@ -333,10 +463,42 @@ export const plan = onRequest(
           formatHistorySnapshot(snapshot, index))
         .join("\n");
 
+      const lifestyleThemes = Array.from(
+        new Set(
+          history.flatMap((snapshot) => snapshot.lifestyleTags)
+        )
+      ).slice(0, 4);
+
+      const recentTakeaways = history
+        .map((snapshot) => snapshot.personalTakeaway)
+        .filter((text) => typeof text === "string" && text.trim().length > 0)
+        .slice(0, 3);
+
+      const recentScores = history
+        .map((snapshot) => snapshot.whitenessScore)
+        .filter((score) => typeof score === "number");
+
+      const contextHints = [
+        recentScores.length > 0 ?
+          `Recent whiteness scores (latest first): ${
+            recentScores.join(", ")
+          }.` :
+          "",
+        lifestyleThemes.length > 0 ?
+          `Lifestyle themes to acknowledge: ${lifestyleThemes.join(", ")}.` :
+          "",
+        recentTakeaways.length > 0 ?
+          `Recent encouragements to build on: ${recentTakeaways.join(" | ")}.` :
+          "",
+      ].filter((hint) => hint.length > 0).join(" ");
+
       const userText =
-        "Design an at-home whitening plan split into immediate, daily, " +
-        "weekly, and caution actions. Use the user's recent scans and " +
-        `lifestyle tags to keep tips relevant. History:\n${historyText}`;
+        "Craft a compact whitening routine tailored to this person. " +
+        "Keep each action hyper-specific to their shade progress, " +
+        "detected issues, or lifestyle tags so it feels made for them. " +
+        "Highlight safe at-home steps and energizing nudges. " +
+        (contextHints.length > 0 ? `${contextHints} ` : "") +
+        `History:\n${historyText}`;
 
       const response = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -355,13 +517,14 @@ Return ONLY valid JSON that matches this schema exactly:
   }
 }
 Guidance:
-- Provide 1-3 items per list; keep actions distinct across lists.
-- Max 18 words per item, starting with an action verb.
-- Reflect the provided lifestyle tags (e.g., coffee) ` +
-              `with specific suggestions.
+- Provide 1-2 items per list; keep actions distinct and tightly focused.
+- Max 14 words per item, starting with an action verb that references ` +
+              `a relevant detail.
+- Mirror the provided lifestyle tags (e.g., coffee) ` +
+              `or detected issues with tailored suggestions.
 - Reinforce safe pacing; avoid drastic or clinical treatments.
-- If history indicates strong momentum, you may include ` +
-              `quick encouragement phrases.
+- If history indicates strong momentum, end one item with a short encouragement.
+- Avoid generic advice that could apply to anyone.
 `,
           },
           {
@@ -462,9 +625,6 @@ function formatHistorySnapshot(
   index: number
 ): string {
   const position = index + 1;
-  const issueSummary = snapshot.detectedIssues
-    .map((issue) => `${issue.key} (${issue.severity})`)
-    .join("; ") || "none";
   const tagSummary = snapshot.lifestyleTags.length > 0 ?
     snapshot.lifestyleTags.join(", ") :
     "none";
@@ -472,5 +632,5 @@ function formatHistorySnapshot(
 
   return `Scan ${position}: score ${snapshot.whitenessScore}/100, ` +
     `shade ${snapshot.shade}, lifestyle tags: ${tagSummary}. ` +
-    `Issues: ${issueSummary}. Takeaway: ${takeaway}.`;
+    `Takeaway: ${takeaway}.`;
 }

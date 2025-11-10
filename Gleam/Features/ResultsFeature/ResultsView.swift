@@ -13,6 +13,19 @@ struct ResultsView: View {
         self.historyItemId = historyItemId
     }
 
+    private var contextTagTitles: [String] {
+        guard let tags = matchedHistoryItem?.contextTags else { return [] }
+        return tags.compactMap { StainTag.title(for: $0) }
+    }
+
+    private var matchedHistoryItem: HistoryItem? {
+        if let historyItemId,
+           let item = historyStore.items.first(where: { $0.id == historyItemId }) {
+            return item
+        }
+        return historyStore.items.first(where: { $0.result == result })
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppSpacing.l) {
@@ -22,6 +35,10 @@ struct ResultsView: View {
                     currentPage: $currentPage
                 )
                 .frame(maxWidth: .infinity)
+
+                if !contextTagTitles.isEmpty {
+                    LifestyleTagSection(tags: contextTagTitles)
+                }
 
                 ResultHeadlineCard(
                     takeaway: result.personalTakeaway,
@@ -288,6 +305,47 @@ private struct ScoreRing: View {
         if animatedScore >= 6.0 { return .blue }
         if animatedScore >= 4.0 { return .orange }
         return .red
+    }
+}
+
+// MARK: - Lifestyle Tags
+private struct LifestyleTagSection: View {
+    let tags: [String]
+
+    var body: some View {
+        InsightCard(title: "Lifestyle tags", icon: "leaf.fill") {
+            LifestyleTagGrid(tags: tags)
+        }
+    }
+}
+
+private struct LifestyleTagGrid: View {
+    let tags: [String]
+
+    private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: 110), spacing: AppSpacing.s)]
+    }
+
+    var body: some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: AppSpacing.s) {
+            ForEach(tags, id: \.self) { tag in
+                LifestyleTagChip(label: tag)
+            }
+        }
+    }
+}
+
+private struct LifestyleTagChip: View {
+    let label: String
+
+    var body: some View {
+        Text(label)
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(Color.accentColor)
+            .padding(.horizontal, AppSpacing.m)
+            .padding(.vertical, AppSpacing.xs)
+            .background(Color.accentColor.opacity(0.12))
+            .clipShape(Capsule())
     }
 }
 

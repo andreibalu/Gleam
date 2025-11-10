@@ -295,6 +295,10 @@ private struct HistoryCardView: View {
         return "🚀"
     }
 
+    private var tagTitles: [String] {
+        item.contextTags.compactMap { StainTag.title(for: $0) }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.m) {
             HStack(alignment: .top, spacing: AppSpacing.m) {
@@ -312,6 +316,10 @@ private struct HistoryCardView: View {
                 Spacer()
 
                 ScanPhotoView(imageData: imageData)
+            }
+
+            if !tagTitles.isEmpty {
+                LifestyleTagRow(tags: tagTitles)
             }
 
             if !item.result.personalTakeaway.isEmpty {
@@ -391,6 +399,36 @@ private struct ScanPhotoView: View {
                     }
             }
         }
+    }
+}
+
+private struct LifestyleTagRow: View {
+    let tags: [String]
+
+    private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: 90), spacing: AppSpacing.s)]
+    }
+
+    var body: some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: AppSpacing.s) {
+            ForEach(tags, id: \.self) { tag in
+                LifestyleTagPill(label: tag)
+            }
+        }
+    }
+}
+
+private struct LifestyleTagPill: View {
+    let label: String
+
+    var body: some View {
+        Text(label)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Color.accentColor)
+            .padding(.horizontal, AppSpacing.m)
+            .padding(.vertical, AppSpacing.xs)
+            .background(Color.accentColor.opacity(0.12))
+            .clipShape(Capsule())
     }
 }
 

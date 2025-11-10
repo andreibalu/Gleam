@@ -22,6 +22,8 @@ struct CameraCaptureView: UIViewControllerRepresentable {
             picker.sourceType = .camera
             picker.cameraCaptureMode = .photo
             picker.cameraDevice = .front  // Use front-facing (selfie) camera
+            picker.showsCameraControls = true
+            picker.allowsEditing = false
             picker.delegate = context.coordinator
             return picker
         } else {
@@ -51,28 +53,44 @@ struct CameraCaptureView: UIViewControllerRepresentable {
         }
         
         func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+            // UIImagePickerController dismisses itself automatically
+            // We just need to process the image and notify the parent
             if let image = info[.originalImage] as? UIImage {
                 let data = compressImage(image)
-                parent.onImageCaptured(data)
+                DispatchQueue.main.async {
+                    self.parent.onImageCaptured(data)
+                }
             } else {
-                parent.onImageCaptured(nil)
+                DispatchQueue.main.async {
+                    self.parent.onImageCaptured(nil)
+                }
             }
         }
         
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            parent.onImageCaptured(nil)
+            // UIImagePickerController dismisses itself automatically
+            DispatchQueue.main.async {
+                self.parent.onImageCaptured(nil)
+            }
         }
         
         func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+            // PHPickerViewController dismisses itself automatically
             guard let result = results.first else {
-                parent.onImageCaptured(nil)
+                DispatchQueue.main.async {
+                    self.parent.onImageCaptured(nil)
+                }
                 return
             }
             
             result.itemProvider.loadObject(ofClass: UIImage.self) { [weak self] object, error in
-                guard let self = self, let image = object as? UIImage else {
+                guard let self = self else {
+                    return
+                }
+                
+                guard let image = object as? UIImage else {
                     DispatchQueue.main.async {
-                        self?.parent.onImageCaptured(nil)
+                        self.parent.onImageCaptured(nil)
                     }
                     return
                 }

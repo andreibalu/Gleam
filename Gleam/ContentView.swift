@@ -76,11 +76,6 @@ struct ContentView: View {
                 showOnboarding = true
             }
         }
-        .onChange(of: scanSession.shouldOpenCamera) { _, shouldOpen in
-            if shouldOpen {
-                selectedTab = 0
-            }
-        }
         .onChange(of: scanSession.shouldOpenHistory) { _, shouldOpen in
             if shouldOpen {
                 selectedTab = 2

@@ -13,3 +13,13 @@ struct StainTag: Identifiable, Hashable {
         StainTag(id: "smoking", title: "Smoking", promptKeyword: "tobacco smoke")
     ]
 }
+
+extension StainTag {
+    static func title(for id: String) -> String? {
+        defaults.first { $0.id == id }?.title
+    }
+
+    static func promptKeyword(for id: String) -> String? {
+        defaults.first { $0.id == id }?.promptKeyword
+    }
+}

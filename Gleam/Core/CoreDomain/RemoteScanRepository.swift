@@ -9,14 +9,20 @@ struct RemoteScanRepository: ScanRepository {
         self.authRepository = authRepository
     }
 
-    func analyze(imageData: Data, tags: [String], previousTakeaways: [String]) async throws -> ScanResult {
+    func analyze(
+        imageData: Data,
+        tags: [String],
+        previousTakeaways: [String],
+        recentTagHistory: [[String]]
+    ) async throws -> ScanResult {
         guard !imageData.isEmpty else { throw AppError.invalidImage }
 
         let url = APIConfiguration.baseURL.appendingPathComponent("analyze")
         let payload = AnalyzePayload(
             image: imageData.base64EncodedString(),
             tags: tags,
-            previousTakeaways: previousTakeaways
+            previousTakeaways: previousTakeaways,
+            tagHistory: recentTagHistory
         )
         let headers = try await authorizationHeaders()
 
@@ -124,6 +130,7 @@ private struct AnalyzePayload: Encodable {
     let image: String
     let tags: [String]
     let previousTakeaways: [String]
+    let tagHistory: [[String]]
 }
 
 private struct AnalyzeResponse: Decodable {

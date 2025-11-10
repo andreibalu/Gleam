@@ -1,7 +1,12 @@
 import Foundation
 
 struct FakeScanRepository: ScanRepository {
-    func analyze(imageData: Data, tags: [String], previousTakeaways: [String]) async throws -> ScanResult {
+    func analyze(
+        imageData: Data,
+        tags: [String],
+        previousTakeaways: [String],
+        recentTagHistory: [[String]]
+    ) async throws -> ScanResult {
         try await Task.sleep(nanoseconds: 200_000_000)
         return SampleData.sampleResult
     }

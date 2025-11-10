@@ -42,7 +42,7 @@ struct HomeView: View {
     }
 
     private var planHistoryContexts: [PlanHistoryContext] {
-        historyStore.items.prefix(3).map { item in
+        historyStore.items.prefix(5).map { item in
             PlanHistoryContext(
                 capturedAt: item.createdAt,
                 whitenessScore: item.result.whitenessScore,
@@ -127,6 +127,7 @@ struct HomeView: View {
         .sheet(isPresented: $showPlanSheet) {
             PlanSheetView(
                 plan: currentPlan,
+                baselinePlan: defaultPlan,
                 isPersonalized: hasPersonalizedPlan,
                 isGenerating: isGeneratingPlan,
                 canPersonalize: canPersonalizePlan,
@@ -349,9 +350,26 @@ struct HomeView: View {
                         personalizedPlan = plan
                     }
                 }
+            } catch let appError as AppError {
+                await MainActor.run {
+                    switch appError {
+                    case .network:
+                        planErrorMessage = "Connection issue. Check your connection and try again."
+                    case .unauthorized:
+                        planErrorMessage = "Please sign back in to personalize your plan."
+                    case .decoding:
+                        planErrorMessage = "We got an unexpected response. Give it another go soon."
+                    case .invalidImage:
+                        planErrorMessage = "We couldn't personalize with your latest scans. Try again soon."
+                    case .unknown:
+                        planErrorMessage = "We couldn't personalize right now. Try again in a bit."
+                    }
+                    print("⚠️ Plan generation failed: \(appError)")
+                }
             } catch {
                 await MainActor.run {
                     planErrorMessage = "We couldn't personalize right now. Try again in a bit."
+                    print("⚠️ Plan generation failed with unexpected error: \(error)")
                 }
             }
             await MainActor.run {
@@ -886,11 +904,11 @@ private struct PlanPreviewCard: View {
     let onTap: () -> Void
 
     private var headline: String {
-        isPersonalized ? "Your personalized plan" : "Personalized plan"
+        isPersonalized ? "Your tailored plan" : "Personalized plan"
     }
 
     private var badgeText: String {
-        isPersonalized ? "Custom" : "Default"
+        isPersonalized ? "Tailored" : "Baseline"
     }
 
     private var highlights: [String] {
@@ -950,6 +968,7 @@ private struct PlanPreviewCard: View {
 
 private struct PlanSheetView: View {
     let plan: Recommendations
+    let baselinePlan: Recommendations
     let isPersonalized: Bool
     let isGenerating: Bool
     let canPersonalize: Bool
@@ -962,9 +981,20 @@ private struct PlanSheetView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: AppSpacing.l) {
-                    PlanStatusHeader(isPersonalized: isPersonalized, historyCount: planHistoryCount)
+                    if isPersonalized {
+                        PersonalizedPlanHighlights(plan: plan, historyCount: planHistoryCount)
+                            .accessibilityIdentifier("personalized_plan_highlights")
+                        PlanStatusHeader(isPersonalized: false, historyCount: planHistoryCount)
+                    } else {
+                        PlanStatusHeader(isPersonalized: false, historyCount: planHistoryCount)
+                    }
 
-                    PlanTimelineView(plan: plan)
+                    PlanTimelineView(
+                        plan: isPersonalized ? baselinePlan : plan,
+                        sectionTitle: isPersonalized ? "Baseline essentials" : nil,
+                        sectionDescription: isPersonalized ? "Keep these fundamentals in play while you follow your tailored routine." : nil,
+                        maxItemsPerCategory: 3
+                    )
 
                     if let errorMessage {
                         Text(errorMessage)
@@ -983,7 +1013,7 @@ private struct PlanSheetView: View {
                                 if isGenerating {
                                     ProgressView()
                                 }
-                                Text(isGenerating ? "Shaping your plan..." : "Make it your own")
+                                Text(isGenerating ? "Shaping your plan..." : (isPersonalized ? "Refresh your tailored plan" : "Make it your own"))
                                     .font(.headline)
                             }
                             .frame(maxWidth: .infinity)
@@ -1004,7 +1034,7 @@ private struct PlanSheetView: View {
                             Button {
                                 onReset()
                             } label: {
-                                Text("Use default plan")
+                                Text("Use baseline plan")
                                     .font(.headline)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 14)
@@ -1018,6 +1048,110 @@ private struct PlanSheetView: View {
             .navigationTitle("Personalized plan")
             .navigationBarTitleDisplayMode(.inline)
         }
+    }
+}
+
+private struct PersonalizedPlanHighlights: View {
+    let plan: Recommendations
+    let historyCount: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.m) {
+            VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                HStack(spacing: AppSpacing.xs) {
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(Color.white)
+                    Text("Custom routine active")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.white)
+                }
+                Text(historySummary)
+                    .font(.footnote)
+                    .foregroundStyle(Color.white.opacity(0.85))
+            }
+
+            VStack(alignment: .leading, spacing: AppSpacing.s) {
+                ForEach(PlanCategory.allCases, id: \.self) { category in
+                    if let highlight = highlight(for: category) {
+                        PersonalizedPlanRow(category: category, text: highlight)
+                    }
+                }
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.48, green: 0.62, blue: 1.0),
+                            Color(red: 0.37, green: 0.51, blue: 0.96)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        )
+        .shadow(color: Color.black.opacity(0.12), radius: 18, x: 0, y: 12)
+    }
+
+    private func highlight(for category: PlanCategory) -> String? {
+        switch category {
+        case .immediate:
+            plan.immediate.first
+        case .daily:
+            plan.daily.first
+        case .weekly:
+            plan.weekly.first
+        case .caution:
+            plan.caution.first
+        }
+    }
+
+    private var historySummary: String {
+        switch historyCount {
+        case 0:
+            return "Personalized from your latest scan insights."
+        case 1:
+            return "Personalized from your most recent scan and habits."
+        case 2:
+            return "Built from your last 2 scans and lifestyle tags."
+        default:
+            return "Built from your latest \(historyCount) scans and lifestyle tags."
+        }
+    }
+}
+
+private struct PersonalizedPlanRow: View {
+    let category: PlanCategory
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: AppSpacing.m) {
+            ZStack {
+                Circle()
+                    .fill(Color.white.opacity(0.18))
+                    .frame(width: 42, height: 42)
+                Image(systemName: category.icon)
+                    .foregroundStyle(.white)
+                    .font(.headline)
+            }
+
+            VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                Text(category.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.white.opacity(0.95))
+                Text(text)
+                    .font(.footnote)
+                    .foregroundStyle(Color.white.opacity(0.9))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                .fill(Color.white.opacity(0.12))
+        )
     }
 }
 
@@ -1057,9 +1191,36 @@ private struct PlanStatusHeader: View {
 
 private struct PlanTimelineView: View {
     let plan: Recommendations
+    let sectionTitle: String?
+    let sectionDescription: String?
+    let maxItemsPerCategory: Int
+
+    init(
+        plan: Recommendations,
+        sectionTitle: String? = nil,
+        sectionDescription: String? = nil,
+        maxItemsPerCategory: Int = Int.max
+    ) {
+        self.plan = plan
+        self.sectionTitle = sectionTitle
+        self.sectionDescription = sectionDescription
+        self.maxItemsPerCategory = max(1, maxItemsPerCategory)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.m) {
+            if let sectionTitle {
+                VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                    Text(sectionTitle)
+                        .font(.headline)
+                    if let sectionDescription {
+                        Text(sectionDescription)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
             ForEach(PlanCategory.allCases, id: \.self) { category in
                 let items = items(for: category)
                 if !items.isEmpty {
@@ -1076,16 +1237,18 @@ private struct PlanTimelineView: View {
     }
 
     private func items(for category: PlanCategory) -> [String] {
+        let list: [String]
         switch category {
         case .immediate:
-            plan.immediate
+            list = plan.immediate
         case .daily:
-            plan.daily
+            list = plan.daily
         case .weekly:
-            plan.weekly
+            list = plan.weekly
         case .caution:
-            plan.caution
+            list = plan.caution
         }
+        return Array(list.prefix(maxItemsPerCategory))
     }
 }
 

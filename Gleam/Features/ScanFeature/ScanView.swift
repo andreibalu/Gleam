@@ -9,6 +9,7 @@ struct ScanView: View {
     @State private var photoItem: PhotosPickerItem? = nil
     @State private var selectedImageData: Data? = nil
     @State private var isAnalyzing = false
+    @State private var showCamera = false
     private let stainTags = StainTag.defaults
     @State private var selectedTagIDs: Set<String> = []
 
@@ -60,7 +61,7 @@ struct ScanView: View {
                             // Initial state: Take photo or choose from library
                             VStack(spacing: AppSpacing.s) {
                                 Button {
-                                    scanSession.shouldOpenCamera = true
+                                    showCamera = true
                                 } label: {
                                     HStack(spacing: 12) {
                                         Image(systemName: "camera.fill")
@@ -100,7 +101,7 @@ struct ScanView: View {
                                     // Compact action buttons side by side
                                     HStack(spacing: AppSpacing.m) {
                                         Button {
-                                            scanSession.shouldOpenCamera = true
+                                            showCamera = true
                                         } label: {
                                             VStack(spacing: 6) {
                                                 Image(systemName: "camera.fill")
@@ -174,6 +175,22 @@ struct ScanView: View {
                 scanSession.capturedImageData = nil
             }
         }
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraCaptureView { data in
+                if let data = data {
+                    selectedImageData = data
+                    selectedTagIDs.removeAll()
+                }
+                showCamera = false
+            }
+            .ignoresSafeArea()
+        }
+        .onChange(of: scanSession.shouldOpenCamera) { _, shouldOpen in
+            if shouldOpen {
+                showCamera = true
+                scanSession.shouldOpenCamera = false
+            }
+        }
     }
     
     private func loadImage(from item: PhotosPickerItem?) async {
@@ -201,12 +218,16 @@ struct ScanView: View {
         let previousTakeaways = historyStore.items
             .compactMap { $0.result.personalTakeaway.isEmpty ? nil : $0.result.personalTakeaway }
             .prefix(5)
+        let recentTagHistory = historyStore.items
+            .prefix(5)
+            .map { $0.contextTags }
 
         do {
             let result = try await scanRepository.analyze(
                 imageData: data,
                 tags: tagKeywords,
-                previousTakeaways: Array(previousTakeaways)
+                previousTakeaways: Array(previousTakeaways),
+                recentTagHistory: Array(recentTagHistory)
             )
             // Save result with image data and tag context
             historyStore.append(
