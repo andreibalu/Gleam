@@ -51,11 +51,12 @@ final class HistoryStore: ObservableObject {
         } catch { }
     }
 
-    func append(_ result: ScanResult, imageData: Data?) {
+    func append(_ result: ScanResult, imageData: Data?, contextTags: [String]) {
         let newItem = HistoryItem(
             id: idGenerator(),
             createdAt: dateProvider(),
-            result: result
+            result: result,
+            contextTags: contextTags
         )
         
         // Save image locally if provided

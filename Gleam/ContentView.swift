@@ -54,6 +54,9 @@ struct ContentView: View {
             .tabItem { Label("Settings", systemImage: "gearshape") }
             .tag(3)
         }
+        .task {
+            await historyStore.load()
+        }
         .onAppear {
             if ProcessInfo.processInfo.arguments.contains("--uitest-skip-onboarding") {
                 didCompleteOnboarding = true
@@ -76,6 +79,12 @@ struct ContentView: View {
         .onChange(of: scanSession.shouldOpenCamera) { _, shouldOpen in
             if shouldOpen {
                 selectedTab = 0
+            }
+        }
+        .onChange(of: scanSession.shouldOpenHistory) { _, shouldOpen in
+            if shouldOpen {
+                selectedTab = 2
+                scanSession.shouldOpenHistory = false
             }
         }
         .onChange(of: scanSession.capturedImageData) { _, data in

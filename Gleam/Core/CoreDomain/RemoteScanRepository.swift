@@ -9,11 +9,15 @@ struct RemoteScanRepository: ScanRepository {
         self.authRepository = authRepository
     }
 
-    func analyze(imageData: Data) async throws -> ScanResult {
+    func analyze(imageData: Data, tags: [String], previousTakeaways: [String]) async throws -> ScanResult {
         guard !imageData.isEmpty else { throw AppError.invalidImage }
 
         let url = APIConfiguration.baseURL.appendingPathComponent("analyze")
-        let payload = AnalyzePayload(image: imageData.base64EncodedString())
+        let payload = AnalyzePayload(
+            image: imageData.base64EncodedString(),
+            tags: tags,
+            previousTakeaways: previousTakeaways
+        )
         let headers = try await authorizationHeaders()
 
         do {
@@ -24,6 +28,36 @@ struct RemoteScanRepository: ScanRepository {
                 body: payload
             )
             return response.result
+        } catch {
+            throw mapError(error)
+        }
+    }
+
+    func generatePlan(history: [PlanHistoryContext]) async throws -> Recommendations {
+        let url = APIConfiguration.baseURL.appendingPathComponent("plan")
+        let headers = try await authorizationHeaders()
+        let formatter = ISO8601DateFormatter()
+        let payload = PlanPayload(
+            history: history.map { context in
+                PlanSnapshotPayload(
+                    capturedAt: formatter.string(from: context.capturedAt),
+                    whitenessScore: context.whitenessScore,
+                    shade: context.shade,
+                    detectedIssues: context.detectedIssues,
+                    lifestyleTags: context.lifestyleTags,
+                    personalTakeaway: context.personalTakeaway
+                )
+            }
+        )
+
+        do {
+            let response: PlanResponse = try await httpClient.send(
+                url: url,
+                method: "POST",
+                headers: headers,
+                body: payload
+            )
+            return response.plan
         } catch {
             throw mapError(error)
         }
@@ -88,6 +122,8 @@ struct RemoteScanRepository: ScanRepository {
 
 private struct AnalyzePayload: Encodable {
     let image: String
+    let tags: [String]
+    let previousTakeaways: [String]
 }
 
 private struct AnalyzeResponse: Decodable {
@@ -95,3 +131,20 @@ private struct AnalyzeResponse: Decodable {
 }
 
 private struct EmptyPayload: Encodable {}
+
+private struct PlanPayload: Encodable {
+    let history: [PlanSnapshotPayload]
+}
+
+private struct PlanSnapshotPayload: Encodable {
+    let capturedAt: String
+    let whitenessScore: Int
+    let shade: String
+    let detectedIssues: [DetectedIssue]
+    let lifestyleTags: [String]
+    let personalTakeaway: String
+}
+
+private struct PlanResponse: Decodable {
+    let plan: Recommendations
+}

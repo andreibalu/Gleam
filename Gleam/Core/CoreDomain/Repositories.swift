@@ -2,7 +2,8 @@ import Foundation
 import UIKit
 
 protocol ScanRepository {
-    func analyze(imageData: Data) async throws -> ScanResult
+    func analyze(imageData: Data, tags: [String], previousTakeaways: [String]) async throws -> ScanResult
+    func generatePlan(history: [PlanHistoryContext]) async throws -> Recommendations
     func fetchLatest() async throws -> ScanResult?
 }
 

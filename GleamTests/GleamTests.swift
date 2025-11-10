@@ -16,10 +16,9 @@ final class GleamUnitTests: XCTestCase {
             shade: "A3",
             detectedIssues: [DetectedIssue(key: "staining", severity: "low", notes: "")],
             confidence: 0.8,
-            recommendations: Recommendations(immediate: ["R"], daily: ["D"], weekly: ["W"], caution: ["C"]),
             referralNeeded: false,
             disclaimer: "Not a diagnosis",
-            planSummary: "Summary"
+            personalTakeaway: "Summary"
         )
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(ScanResult.self, from: data)

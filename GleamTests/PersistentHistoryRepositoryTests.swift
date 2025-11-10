@@ -25,7 +25,7 @@ final class PersistentHistoryRepositoryTests: XCTestCase {
 
     func testInsertPersistsItemsAcrossInstances() async throws {
         let repository = PersistentHistoryRepository(fileURL: storageURL)
-        let item = HistoryItem(id: UUID().uuidString, createdAt: Date(), result: SampleData.sampleResult)
+        let item = HistoryItem(id: UUID().uuidString, createdAt: Date(), result: SampleData.sampleResult, contextTags: [])
 
         await repository.insert(item)
 
@@ -39,8 +39,8 @@ final class PersistentHistoryRepositoryTests: XCTestCase {
 
     func testDeleteRemovesPersistedItems() async throws {
         let repository = PersistentHistoryRepository(fileURL: storageURL)
-        let first = HistoryItem(id: UUID().uuidString, createdAt: Date(), result: SampleData.sampleResult)
-        let second = HistoryItem(id: UUID().uuidString, createdAt: Date().addingTimeInterval(10), result: SampleData.sampleResult)
+        let first = HistoryItem(id: UUID().uuidString, createdAt: Date(), result: SampleData.sampleResult, contextTags: [])
+        let second = HistoryItem(id: UUID().uuidString, createdAt: Date().addingTimeInterval(10), result: SampleData.sampleResult, contextTags: [])
 
         await repository.insert(first)
         await repository.insert(second)

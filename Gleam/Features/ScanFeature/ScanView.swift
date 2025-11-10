@@ -9,7 +9,8 @@ struct ScanView: View {
     @State private var photoItem: PhotosPickerItem? = nil
     @State private var selectedImageData: Data? = nil
     @State private var isAnalyzing = false
-    @State private var analysisResult: ScanResult? = nil
+    private let stainTags = StainTag.defaults
+    @State private var selectedTagIDs: Set<String> = []
 
     var onFinished: (ScanResult) -> Void
 
@@ -42,6 +43,15 @@ struct ScanView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    if selectedImageData != nil {
+                        StainTagSelector(
+                            tags: stainTags,
+                            selectedTagIDs: $selectedTagIDs
+                        )
+                        .padding(.horizontal, AppSpacing.l)
+                        .padding(.top, AppSpacing.m)
+                    }
                 }
                 // Floating Action Buttons - invisible background, pure focus on actions
                 .safeAreaInset(edge: .bottom) {
@@ -160,6 +170,7 @@ struct ScanView: View {
         .onAppear {
             if let capturedData = scanSession.capturedImageData {
                 selectedImageData = capturedData
+                selectedTagIDs.removeAll()
                 scanSession.capturedImageData = nil
             }
         }
@@ -170,6 +181,7 @@ struct ScanView: View {
         do {
             if let data = try await item.loadTransferable(type: Data.self) {
                 selectedImageData = compressImageDataIfNeeded(data)
+                selectedTagIDs.removeAll()
             }
         } catch { }
     }
@@ -177,16 +189,31 @@ struct ScanView: View {
     private func analyze() async {
         guard let data = selectedImageData else { return }
         isAnalyzing = true
-        defer { 
+        defer {
             isAnalyzing = false
             // Clear the image after analysis so Scan tab shows placeholder again
             selectedImageData = nil
+            selectedTagIDs.removeAll()
         }
+
+        let selectedTags = stainTags.filter { selectedTagIDs.contains($0.id) }
+        let tagKeywords = selectedTags.map { $0.promptKeyword }
+        let previousTakeaways = historyStore.items
+            .compactMap { $0.result.personalTakeaway.isEmpty ? nil : $0.result.personalTakeaway }
+            .prefix(5)
+
         do {
-            let result = try await scanRepository.analyze(imageData: data)
-            analysisResult = result
-            // Save result with image data
-            historyStore.append(result, imageData: data)
+            let result = try await scanRepository.analyze(
+                imageData: data,
+                tags: tagKeywords,
+                previousTakeaways: Array(previousTakeaways)
+            )
+            // Save result with image data and tag context
+            historyStore.append(
+                result,
+                imageData: data,
+                contextTags: selectedTags.map { $0.id }
+            )
             onFinished(result)
         } catch { }
     }
@@ -459,6 +486,78 @@ private struct AnalysisOverlay: View {
                 pulseAnimation = true
             }
         }
+    }
+}
+
+// MARK: - Stain Tag Selector
+private struct StainTagSelector: View {
+    let tags: [StainTag]
+    @Binding var selectedTagIDs: Set<String>
+    
+    private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: 120), spacing: AppSpacing.s)]
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.s) {
+            Text("Anything staining lately?")
+                .font(.headline)
+            Text("Pick the habits that might be tinting your teeth. We'll factor them into the analysis.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            
+            LazyVGrid(columns: columns, alignment: .leading, spacing: AppSpacing.s) {
+                ForEach(tags) { tag in
+                    StainTagChip(
+                        tag: tag,
+                        isSelected: selectedTagIDs.contains(tag.id),
+                        onToggle: { toggle(tag) }
+                    )
+                }
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                .fill(Color(.systemBackground))
+                .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 4)
+        )
+    }
+    
+    private func toggle(_ tag: StainTag) {
+        if selectedTagIDs.contains(tag.id) {
+            selectedTagIDs.remove(tag.id)
+        } else {
+            selectedTagIDs.insert(tag.id)
+        }
+    }
+}
+
+private struct StainTagChip: View {
+    let tag: StainTag
+    let isSelected: Bool
+    let onToggle: () -> Void
+    
+    var body: some View {
+        Button(action: onToggle) {
+            HStack(spacing: AppSpacing.xs) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.footnote)
+                Text(tag.title)
+                    .font(.subheadline.weight(.medium))
+            }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity)
+            .background(isSelected ? Color.blue.opacity(0.12) : Color.white)
+            .foregroundStyle(isSelected ? Color.blue : Color.primary)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(isSelected ? Color.blue : Color.primary.opacity(0.15), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 

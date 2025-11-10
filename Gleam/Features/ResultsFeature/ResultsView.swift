@@ -16,7 +16,6 @@ struct ResultsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppSpacing.l) {
-                // Swipeable Score Ring / Photo Area with dynamic height
                 SwipeableScoreArea(
                     score: normalizedScore(result.whitenessScore),
                     imageData: imageData,
@@ -24,35 +23,19 @@ struct ResultsView: View {
                 )
                 .frame(maxWidth: .infinity)
 
-                GroupBox("Shade Classification") {
-                    HStack {
-                        Label(shadeDescription, systemImage: "eyedropper")
-                            .font(.subheadline)
-                        Spacer()
-                        Text(result.shade)
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
-                    }
-                }
+                ResultHeadlineCard(
+                    takeaway: result.personalTakeaway,
+                    referralNeeded: result.referralNeeded
+                )
 
-                GroupBox("Detected Issues") {
-                    VStack(alignment: .leading, spacing: AppSpacing.s) {
-                        ForEach(result.detectedIssues, id: \.key) { issue in
-                            HStack {
-                                Text(issue.key.capitalized)
-                                Spacer()
-                                Text(issue.severity)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
+                ShadeConfidenceCard(
+                    shadeCode: result.shade,
+                    shadeDescription: shadeDescription,
+                    confidence: result.confidence
+                )
 
-                GroupBox("Plan") {
-                    PlanSection(title: "Immediate", items: result.recommendations.immediate)
-                    PlanSection(title: "Daily", items: result.recommendations.daily)
-                    PlanSection(title: "Weekly", items: result.recommendations.weekly)
-                    PlanSection(title: "Caution", items: result.recommendations.caution)
+                if !result.detectedIssues.isEmpty {
+                    DetectedIssuesSection(issues: result.detectedIssues)
                 }
 
                 ShareLink(item: shareText(for: result)) {
@@ -64,6 +47,7 @@ struct ResultsView: View {
                 Text(result.disclaimer)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                    .padding(.bottom, AppSpacing.l)
             }
             .padding()
         }
@@ -95,25 +79,6 @@ struct ResultsView: View {
             "D2": "Medium", "D3": "Medium-Dark", "D4": "Dark"
         ]
         return shadeMap[result.shade] ?? result.shade
-    }
-}
-
-private struct PlanSection: View {
-    let title: String
-    let items: [String]
-    var body: some View {
-        if !items.isEmpty {
-            VStack(alignment: .leading, spacing: AppSpacing.s) {
-                Text(title).font(.headline)
-                ForEach(items, id: \.self) { item in
-                    HStack(alignment: .top, spacing: 8) {
-                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                        Text(item)
-                    }
-                }
-            }
-            .padding(.vertical, AppSpacing.s)
-        }
     }
 }
 
@@ -330,12 +295,213 @@ private func shareText(for result: ScanResult) -> String {
     var lines: [String] = []
     lines.append("Gleam Whitening Summary")
     lines.append("Score: \(result.whitenessScore)")
+    lines.append("Takeaway: \(result.personalTakeaway)")
     lines.append("Shade: \(result.shade)")
-    if !result.recommendations.immediate.isEmpty { lines.append("Immediate: \(result.recommendations.immediate.joined(separator: ", "))") }
-    if !result.recommendations.daily.isEmpty { lines.append("Daily: \(result.recommendations.daily.joined(separator: ", "))") }
-    if !result.recommendations.weekly.isEmpty { lines.append("Weekly: \(result.recommendations.weekly.joined(separator: ", "))") }
-    if !result.recommendations.caution.isEmpty { lines.append("Caution: \(result.recommendations.caution.joined(separator: ", "))") }
     return lines.joined(separator: "\n")
+}
+
+// MARK: - Result Detail Components
+private struct ResultHeadlineCard: View {
+    let takeaway: String
+    let referralNeeded: Bool
+
+    var body: some View {
+        InsightCard(title: "Personal Takeaway", icon: "sparkles") {
+            Text(takeaway)
+                .font(.body.weight(.medium))
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.leading)
+
+            if referralNeeded {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "cross.case.fill")
+                        .foregroundStyle(.red)
+                    Text("Consider scheduling a professional consultation to review these findings in more detail.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.red.opacity(0.08))
+                )
+            }
+        }
+    }
+}
+
+private struct ShadeConfidenceCard: View {
+    let shadeCode: String
+    let shadeDescription: String
+    let confidence: Double
+
+    private var confidenceValue: Double {
+        min(max(confidence, 0.0), 1.0)
+    }
+
+    private var confidenceLabel: String {
+        let percentage = Int(confidenceValue * 100)
+        switch percentage {
+        case 0...40: return "Low confidence"
+        case 41...70: return "Moderate confidence"
+        default: return "High confidence"
+        }
+    }
+
+    var body: some View {
+        InsightCard(title: "Shade & Confidence", icon: "paintpalette.fill") {
+            VStack(alignment: .leading, spacing: AppSpacing.m) {
+                HStack(alignment: .center, spacing: AppSpacing.m) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(shadeDescription)
+                            .font(.title3.bold())
+                        Text("Shade \(shadeCode)")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    ShadeSwatchView(shadeCode: shadeCode)
+                }
+
+                VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                    HStack {
+                        Text("Model confidence")
+                            .font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Text("\(Int(confidenceValue * 100))%")
+                            .font(.subheadline.weight(.bold))
+                    }
+
+                    ProgressView(value: confidenceValue)
+                        .tint(.blue)
+
+                    Text(confidenceLabel)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+}
+
+private struct DetectedIssuesSection: View {
+    let issues: [DetectedIssue]
+
+    var body: some View {
+        InsightCard(title: "Focus Areas", icon: "exclamationmark.triangle.fill") {
+            VStack(alignment: .leading, spacing: AppSpacing.s) {
+                ForEach(issues, id: \.key) { issue in
+                    IssueCard(issue: issue)
+                }
+            }
+        }
+    }
+}
+
+private struct IssueCard: View {
+    let issue: DetectedIssue
+
+    private var severityColor: Color {
+        switch issue.severity.lowercased() {
+        case "high": return .red
+        case "medium": return .orange
+        default: return .blue
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(issue.key.capitalized)
+                    .font(.headline)
+                Spacer()
+                Text(issue.severity.uppercased())
+                    .font(.caption2.weight(.bold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(severityColor.opacity(0.1))
+                    .foregroundStyle(severityColor)
+                    .clipShape(Capsule())
+            }
+
+            Text(issue.notes)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemBackground))
+        )
+    }
+}
+
+private struct InsightCard<Content: View>: View {
+    let title: String
+    let icon: String
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.m) {
+            Label(title, systemImage: icon)
+                .font(.headline)
+                .foregroundStyle(.primary)
+
+            content
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color(.systemBackground))
+                .shadow(color: Color.black.opacity(0.05), radius: 12, x: 0, y: 6)
+        )
+    }
+}
+
+private struct ShadeSwatchView: View {
+    let shadeCode: String
+
+    var body: some View {
+        VStack {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(shadeGradient(for: shadeCode))
+                .frame(width: 56, height: 56)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.white.opacity(0.4), lineWidth: 1)
+                )
+            Text(shadeLabel)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var shadeLabel: String {
+        shadeCode.uppercased()
+    }
+
+    private func shadeGradient(for shade: String) -> LinearGradient {
+        let start: Color
+        let end: Color
+        switch shade.uppercased() {
+        case "A1": (start, end) = (.yellow.opacity(0.25), .white)
+        case "A2": (start, end) = (.yellow.opacity(0.35), .white)
+        case "A3": (start, end) = (.yellow.opacity(0.5), .white)
+        case "B1": (start, end) = (.mint.opacity(0.25), .white)
+        case "B2": (start, end) = (.mint.opacity(0.4), .white)
+        case "B3": (start, end) = (.mint.opacity(0.55), .white)
+        case "C1": (start, end) = (.orange.opacity(0.35), .white)
+        case "C2": (start, end) = (.orange.opacity(0.5), .white)
+        case "C3": (start, end) = (.orange.opacity(0.6), .white)
+        case "D2": (start, end) = (.brown.opacity(0.4), .white)
+        case "D3": (start, end) = (.brown.opacity(0.55), .white)
+        case "D4": (start, end) = (.brown.opacity(0.7), .white)
+        default: (start, end) = (.blue.opacity(0.2), .white)
+        }
+        return LinearGradient(colors: [start, end], startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
 }
 
 

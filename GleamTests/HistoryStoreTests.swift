@@ -41,7 +41,7 @@ final class HistoryStoreTests: XCTestCase {
         let result = SampleData.sampleResult
 
         await store.load()
-        store.append(result)
+        store.append(result, imageData: nil, contextTags: [])
 
         XCTAssertEqual(store.items.count, 1)
         let newItem = try XCTUnwrap(store.items.first)
@@ -53,8 +53,8 @@ final class HistoryStoreTests: XCTestCase {
     private func sampleItems() -> [HistoryItem] {
         let result = SampleData.sampleResult
         return [
-            HistoryItem(id: "1", createdAt: Date(timeIntervalSince1970: 100), result: result),
-            HistoryItem(id: "2", createdAt: Date(timeIntervalSince1970: 50), result: result)
+            HistoryItem(id: "1", createdAt: Date(timeIntervalSince1970: 100), result: result, contextTags: []),
+            HistoryItem(id: "2", createdAt: Date(timeIntervalSince1970: 50), result: result, contextTags: [])
         ]
     }
 }
