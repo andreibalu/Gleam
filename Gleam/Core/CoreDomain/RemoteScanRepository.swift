@@ -17,7 +17,7 @@ struct RemoteScanRepository: ScanRepository {
     ) async throws -> ScanResult {
         guard !imageData.isEmpty else { throw AppError.invalidImage }
 
-        let url = APIConfiguration.baseURL.appendingPathComponent("analyze")
+        let url = APIConfiguration.analyzeURL
         let payload = AnalyzePayload(
             image: imageData.base64EncodedString(),
             tags: tags,
@@ -40,7 +40,7 @@ struct RemoteScanRepository: ScanRepository {
     }
 
     func generatePlan(history: [PlanHistoryContext]) async throws -> Recommendations {
-        let url = APIConfiguration.baseURL.appendingPathComponent("plan")
+        let url = APIConfiguration.planURL
         let headers = try await authorizationHeaders()
         let formatter = ISO8601DateFormatter()
         let payload = PlanPayload(
@@ -56,6 +56,9 @@ struct RemoteScanRepository: ScanRepository {
             }
         )
 
+        print("📋 Generating plan with \(history.count) history entries")
+        print("📋 History entries: \(history.map { "score: \($0.whitenessScore), shade: \($0.shade), tags: \($0.lifestyleTags.count)" })")
+
         do {
             let response: PlanResponse = try await httpClient.send(
                 url: url,
@@ -63,14 +66,22 @@ struct RemoteScanRepository: ScanRepository {
                 headers: headers,
                 body: payload
             )
+            print("✅ Plan generated successfully")
             return response.plan
+        } catch let apiError as APIError {
+            print("❌ Plan generation API error: \(apiError)")
+            if case .requestFailed(let statusCode) = apiError {
+                print("❌ HTTP Status: \(statusCode)")
+            }
+            throw mapError(apiError)
         } catch {
+            print("❌ Plan generation error: \(error)")
             throw mapError(error)
         }
     }
 
     func fetchLatest() async throws -> ScanResult? {
-        let url = APIConfiguration.baseURL.appendingPathComponent("history/latest")
+        let url = APIConfiguration.historyLatestURL
         let headers = try await authorizationHeaders()
 
         do {
@@ -99,7 +110,8 @@ struct RemoteScanRepository: ScanRepository {
             case .requestFailed(let statusCode):
                 switch statusCode {
                 case 400:
-                    return .invalidImage
+                    // 400 from plan endpoint means invalid request data, not invalid image
+                    return .unknown
                 case 401, 403:
                     return .unauthorized
                 default:

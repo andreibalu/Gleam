@@ -340,6 +340,11 @@ struct HomeView: View {
         isGeneratingPlan = true
         planErrorMessage = nil
         let contexts = planHistoryContexts
+        
+        print("🔍 Attempting to generate plan with \(contexts.count) history entries")
+        if contexts.isEmpty {
+            print("⚠️ Warning: planHistoryContexts is empty but canPersonalizePlan is true")
+        }
 
         Task {
             do {
@@ -364,12 +369,14 @@ struct HomeView: View {
                     case .unknown:
                         planErrorMessage = "We couldn't personalize right now. Try again in a bit."
                     }
-                    print("⚠️ Plan generation failed: \(appError)")
+                    print("⚠️ Plan generation failed with AppError: \(appError)")
                 }
             } catch {
                 await MainActor.run {
                     planErrorMessage = "We couldn't personalize right now. Try again in a bit."
                     print("⚠️ Plan generation failed with unexpected error: \(error)")
+                    print("⚠️ Error type: \(type(of: error))")
+                    print("⚠️ Error description: \(error.localizedDescription)")
                 }
             }
             await MainActor.run {

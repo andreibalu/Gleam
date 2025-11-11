@@ -41,11 +41,18 @@ struct DefaultHTTPClient: HTTPClient {
             throw APIError.requestFailed(-1)
         }
         guard (200..<300).contains(httpResponse.statusCode) else {
+            // Log error response for debugging
+            if let errorBody = String(data: data, encoding: .utf8) {
+                print("❌ HTTP Error \(httpResponse.statusCode): \(errorBody)")
+            }
             throw APIError.requestFailed(httpResponse.statusCode)
         }
         do {
             return try JSONDecoder().decode(ResponseBody.self, from: data)
         } catch {
+            if let jsonString = String(data: data, encoding: .utf8) {
+                print("❌ Decoding error. Response body: \(jsonString)")
+            }
             throw APIError.decoding
         }
     }
