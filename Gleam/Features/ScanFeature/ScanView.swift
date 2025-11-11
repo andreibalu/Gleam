@@ -1,6 +1,7 @@
 import SwiftUI
 import PhotosUI
 import UIKit
+import Vision
 
 struct ScanView: View {
     @Environment(\.scanRepository) private var scanRepository
@@ -34,16 +35,13 @@ struct ScanView: View {
                     ZStack {
                         if let data = selectedImageData, let uiImage = UIImage(data: data) {
                             SelectedPhotoView(image: uiImage)
-                                .overlay {
-                                    if isAnalyzing {
-                                        AnalysisOverlay()
-                                    }
-                                }
                         } else {
                             ScanPlaceholderView()
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .opacity(isAnalyzing ? 0 : 1)
+                    .allowsHitTesting(!isAnalyzing)
 
                     if selectedImageData != nil {
                         StainTagSelector(
@@ -52,11 +50,18 @@ struct ScanView: View {
                         )
                         .padding(.horizontal, AppSpacing.l)
                         .padding(.top, AppSpacing.m)
+                        .opacity(isAnalyzing ? 0 : 1)
+                        .allowsHitTesting(!isAnalyzing)
                     }
                 }
+                .animation(.easeInOut(duration: 0.25), value: isAnalyzing)
                 // Floating Action Buttons - invisible background, pure focus on actions
                 .safeAreaInset(edge: .bottom) {
                     VStack(spacing: AppSpacing.m) {
+                        if isAnalyzing {
+                            // Hide actions during analysis
+                            EmptyView()
+                        } else {
                         if selectedImageData == nil {
                             // Initial state: Take photo or choose from library
                             VStack(spacing: AppSpacing.s) {
@@ -160,11 +165,18 @@ struct ScanView: View {
                                 .disabled(isAnalyzing)
                                 .opacity(isAnalyzing ? 0.7 : 1.0)
                             }
+                            }
                         }
                     }
                     .padding(.horizontal, AppSpacing.l)
                     .padding(.top, selectedImageData == nil ? AppSpacing.xl : AppSpacing.m)
                     .padding(.bottom, AppSpacing.l)
+                }
+
+                if isAnalyzing {
+                    AnalysisOverlay(imageData: selectedImageData)
+                        .transition(.opacity)
+                        .zIndex(1)
                 }
             }
         }
@@ -203,8 +215,10 @@ struct ScanView: View {
         } catch { }
     }
 
+    @MainActor
     private func analyze() async {
         guard let data = selectedImageData else { return }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         isAnalyzing = true
         defer {
             isAnalyzing = false
@@ -472,40 +486,320 @@ private struct InstructionRow: View {
 
 // MARK: - Analysis Overlay
 private struct AnalysisOverlay: View {
-    @State private var pulseAnimation = false
+    private let image: UIImage?
+    @State private var haloPulse = false
+    @State private var ringRotation = false
+    @State private var mouthFocus: MouthFocus? = nil
+    
+    init(imageData: Data?) {
+        if let data = imageData {
+            self.image = UIImage(data: data)
+        } else {
+            self.image = nil
+        }
+    }
+    
+    var body: some View {
+        GeometryReader { proxy in
+            // Base size used for image; ring scales independently to appear larger
+            let baseSize = min(proxy.size.width, proxy.size.height) * 0.58
+            let imageSize = baseSize * 0.82
+            let ringDiameter = imageSize * 1.6
+            
+        ZStack {
+                // Keep underlying Scan screen visible; add tasteful edge glow that fades toward center
+                EdgeVignetteOverlay()
+                .ignoresSafeArea()
+            
+                VStack(spacing: AppSpacing.xl) {
+                ZStack {
+                    Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [
+                                        Color.white.opacity(0.18),
+                                        Color.white.opacity(0.04)
+                                    ],
+                                    center: .center,
+                                    startRadius: 0,
+                                    endRadius: baseSize * 0.8
+                                )
+                            )
+                            .frame(width: baseSize * 1.25, height: baseSize * 1.25)
+                            .scaleEffect(haloPulse ? 1.03 : 0.97)
+                            .animation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true), value: haloPulse)
+                        
+                        Circle()
+                            .stroke(
+                                AngularGradient(
+                                    colors: [
+                                        Color.white.opacity(0.6),
+                                        Color.white.opacity(0.1),
+                                        Color.white.opacity(0.6)
+                                    ],
+                                    center: .center
+                                ),
+                                style: StrokeStyle(lineWidth: 2.5)
+                            )
+                            .frame(width: baseSize * 1.1, height: baseSize * 1.1)
+                            .blur(radius: 10)
+                            .opacity(0.7)
+                        
+                        Circle()
+                            .trim(from: 0, to: 0.72)
+                            .stroke(
+                                AngularGradient(
+                                    colors: [
+                                        Color(red: 0.43, green: 0.63, blue: 1.0),
+                                        Color(red: 0.71, green: 0.46, blue: 1.0),
+                                        Color(red: 0.43, green: 0.63, blue: 1.0)
+                                    ],
+                                    center: .center
+                                ),
+                                style: StrokeStyle(lineWidth: 6, lineCap: .round)
+                            )
+                            .frame(width: ringDiameter, height: ringDiameter)
+                            .rotationEffect(.degrees(ringRotation ? 360 : 0))
+                            .animation(.linear(duration: 1.4).repeatForever(autoreverses: false), value: ringRotation)
+                        
+                        if let image {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: imageSize, height: imageSize)
+                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous))
+                                .shadow(color: Color.black.opacity(0.35), radius: 24, x: 0, y: 14)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
+                                        .stroke(Color.white.opacity(0.35), lineWidth: 1)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
+                                        .fill(Color.white.opacity(0.08))
+                                        .blendMode(.softLight)
+                                )
+                                .overlay {
+                                    if let focus = mouthFocus {
+                                        MouthFocusIndicator(imageSize: imageSize, focus: focus, cornerRadius: AppRadius.large)
+                                            .transition(.opacity)
+                }
+                                }
+                        } else {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: baseSize * 0.32, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.9))
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    
+                    VStack(spacing: AppSpacing.s) {
+                Text("Analyzing Your Smile")
+                            .font(.title2.weight(.semibold))
+                            .foregroundStyle(Color.black.opacity(0.92))
+                        Text("We’re polishing the details to craft your personalized insights.")
+                            .font(.body)
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(Color.black.opacity(0.72))
+                    }
+                    .padding(.horizontal, AppSpacing.xl)
+                    
+                    ShimmeringProgressCapsule()
+                        .padding(.horizontal, AppSpacing.xl)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.vertical, AppSpacing.xl)
+            }
+        }
+        .transition(.opacity)
+        .onAppear {
+            haloPulse = true
+            ringRotation = true
+            if let img = image {
+                Task { mouthFocus = await detectMouthFocus(in: img) }
+            }
+        }
+    }
+}
+
+// MARK: - Elegant edge glow that preserves center content
+private struct EdgeVignetteOverlay: View {
+    var body: some View {
+        GeometryReader { geo in
+            let maxDim = max(geo.size.width, geo.size.height)
+            ZStack {
+                // Radial fade from transparent center to themed hues at edges
+                RadialGradient(
+                    colors: [
+                        .clear,
+                        Color.blue.opacity(0.10),
+                        Color.purple.opacity(0.16),
+                        Color.black.opacity(0.18)
+                    ],
+                    center: .center,
+                    startRadius: maxDim * 0.15,
+                    endRadius: maxDim * 0.65
+                )
+                .blendMode(.plusLighter)
+                
+                // Subtle corner tints
+                LinearGradient(
+                    colors: [
+                        Color.purple.opacity(0.10),
+                        .clear,
+                        Color.blue.opacity(0.10)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .opacity(0.6)
+            }
+        }
+    }
+}
+
+// MARK: - Mouth/Teeth focus vignette
+// MARK: - Mouth focus indicator types and view
+private struct MouthFocus {
+    let rect: CGRect // normalized to 0...1, origin top-left
+}
+
+private struct MouthFocusIndicator: View {
+    let imageSize: CGFloat
+    let focus: MouthFocus
+    let cornerRadius: CGFloat
+    
+    var body: some View {
+        Canvas { context, _ in
+            let outer = CGRect(x: 0, y: 0, width: imageSize, height: imageSize)
+            let focusRect = CGRect(
+                x: focus.rect.origin.x * imageSize,
+                y: focus.rect.origin.y * imageSize,
+                width: focus.rect.size.width * imageSize,
+                height: focus.rect.size.height * imageSize
+            )
+            .insetBy(dx: -6, dy: -6)
+            
+            var path = Path(roundedRect: outer, cornerRadius: cornerRadius)
+            path.addPath(Path(roundedRect: focusRect, cornerRadius: 14))
+            context.fill(path, with: .color(Color.black.opacity(0.35)), style: FillStyle(eoFill: true))
+            
+            context.stroke(
+                Path(roundedRect: focusRect, cornerRadius: 14),
+                with: .color(.white),
+                lineWidth: 2.5
+            )
+        }
+        .frame(width: imageSize, height: imageSize)
+        .allowsHitTesting(false)
+    }
+}
+
+// MARK: - Vision utility
+private extension AnalysisOverlay {
+    func detectMouthFocus(in image: UIImage) async -> MouthFocus? {
+        guard let cgImage = image.cgImage else { return nil }
+        
+        return await withCheckedContinuation { continuation in
+            let request = VNDetectFaceLandmarksRequest { req, _ in
+                guard
+                    let obs = (req.results as? [VNFaceObservation])?.first,
+                    let lips = obs.landmarks?.outerLips ?? obs.landmarks?.innerLips
+                else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                
+                // Convert lip points (normalized within face) to normalized in full image (origin top-left)
+                let face = obs.boundingBox // origin is bottom-left in Vision
+                let points = lips.normalizedPoints.map { p -> CGPoint in
+                    // p is in face box coordinates (origin bottom-left). Convert to image coords.
+                    let xInFace = CGFloat(p.x)
+                    let yInFace = CGFloat(p.y)
+                    let x = face.origin.x + xInFace * face.size.width
+                    let yBL = face.origin.y + yInFace * face.size.height
+                    // flip y to top-left origin
+                    let y = 1.0 - yBL
+                    return CGPoint(x: x, y: y)
+                }
+                
+                guard let first = points.first else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                var minX = first.x, maxX = first.x, minY = first.y, maxY = first.y
+                for pt in points {
+                    minX = min(minX, pt.x)
+                    maxX = max(maxX, pt.x)
+                    minY = min(minY, pt.y)
+                    maxY = max(maxY, pt.y)
+                }
+                let pad: CGFloat = 0.03
+                let rect = CGRect(
+                    x: max(0, minX - pad),
+                    y: max(0, minY - pad * 0.6),
+                    width: min(1, maxX + pad) - max(0, minX - pad),
+                    height: min(1, maxY + pad * 1.2) - max(0, minY - pad * 0.6)
+                )
+                continuation.resume(returning: MouthFocus(rect: rect))
+            }
+            
+            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    try handler.perform([request])
+                } catch {
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
+    }
+}
+private struct ShimmeringProgressCapsule: View {
+    @State private var shimmer = false
     
     var body: some View {
         ZStack {
-            // Dark overlay
-            Color.black.opacity(0.6)
-                .ignoresSafeArea()
-            
-            // Analysis indicator
-            VStack(spacing: AppSpacing.m) {
-                ZStack {
-                    Circle()
-                        .fill(.ultraThinMaterial)
-                        .frame(width: 100, height: 100)
-                        .scaleEffect(pulseAnimation ? 1.1 : 1.0)
-                    
-                    ProgressView()
-                        .tint(.white)
-                        .scaleEffect(1.5)
-                }
-                
-                Text("Analyzing Your Smile")
-                    .font(.title3.bold())
-                    .foregroundStyle(.white)
-                
-                Text("This will just take a moment...")
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.8))
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(Color.white.opacity(0.35))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .stroke(Color.black.opacity(0.12), lineWidth: 1)
+                )
+                .frame(height: 56)
+                .overlay(
+                    GeometryReader { geo in
+                        let width = geo.size.width
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                Color.white.opacity(0),
+                                Color.white.opacity(0.9),
+                                Color.white.opacity(0)
+                            ]),
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: width * 0.45)
+                        .offset(x: shimmer ? width : -width)
+                        .animation(.linear(duration: 1.4).repeatForever(autoreverses: false), value: shimmer)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                )
+                .overlay(
+                    HStack(spacing: AppSpacing.s) {
+                        Image(systemName: "sparkles")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(Color.black.opacity(0.9))
+                            .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 0)
+                        Text("Analyzing…")
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(Color.black.opacity(0.9))
             }
+                )
+                .compositingGroup()
+                .shadow(color: Color.black.opacity(0.15), radius: 16, x: 0, y: 10)
         }
         .onAppear {
-            withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
-                pulseAnimation = true
-            }
+            shimmer = true
         }
     }
 }

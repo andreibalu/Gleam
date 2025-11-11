@@ -1,10 +1,16 @@
 import SwiftUI
 
+private enum PlanDisplayMode: String {
+    case personalized
+    case baseline
+}
+
 struct HomeView: View {
     @Environment(\.scanRepository) private var scanRepository
     @EnvironmentObject private var scanSession: ScanSession
     @EnvironmentObject private var historyStore: HistoryStore
     @AppStorage("userFirstName") private var userFirstName: String = "Andrei"
+    @AppStorage("planDisplayMode") private var planDisplayModeRawValue: String = PlanDisplayMode.personalized.rawValue
     @State private var lastResult: ScanResult?
     @State private var showCamera = false
     @State private var showPlanSheet = false
@@ -33,7 +39,10 @@ struct HomeView: View {
     )
 
     private var currentPlan: Recommendations {
-        personalizedPlan?.plan ?? defaultPlan
+        guard isPersonalizedPlanActive, let tailoredPlan = personalizedPlan?.plan else {
+            return defaultPlan
+        }
+        return tailoredPlan
     }
 
     private var hasPersonalizedPlan: Bool {
@@ -49,6 +58,27 @@ struct HomeView: View {
 
     private var planStatus: PlanStatus? {
         personalizedPlan?.status
+    }
+
+    private var selectedPlanDisplayMode: PlanDisplayMode {
+        PlanDisplayMode(rawValue: planDisplayModeRawValue) ?? .personalized
+    }
+
+    private var isPersonalizedPlanActive: Bool {
+        hasPersonalizedPlan && selectedPlanDisplayMode == .personalized
+    }
+
+    private var planDisplayModeBinding: Binding<PlanDisplayMode> {
+        Binding(
+            get: { selectedPlanDisplayMode },
+            set: { newValue in
+                if newValue == .personalized && !hasPersonalizedPlan {
+                    planDisplayModeRawValue = PlanDisplayMode.baseline.rawValue
+                } else {
+                    planDisplayModeRawValue = newValue.rawValue
+                }
+            }
+        )
     }
 
     var body: some View {
@@ -82,9 +112,10 @@ struct HomeView: View {
 
                 PlanPreviewCard(
                     plan: currentPlan,
-                    isPersonalized: hasPersonalizedPlan,
+                    isPersonalized: isPersonalizedPlanActive,
                     status: planStatus,
-                    onTap: { showPlanSheet = true }
+                    onTap: { showPlanSheet = true },
+                    hasAvailablePersonalizedPlan: hasPersonalizedPlan
                 )
 
                 if let result = lastResult {
@@ -120,10 +151,11 @@ struct HomeView: View {
         }
         .sheet(isPresented: $showPlanSheet) {
             PlanSheetView(
-                plan: currentPlan,
+                personalizedPlan: personalizedPlan?.plan,
                 baselinePlan: defaultPlan,
                 status: planStatus,
-                isPersonalized: hasPersonalizedPlan
+                canUsePersonalizedPlan: hasPersonalizedPlan,
+                displayMode: planDisplayModeBinding
             )
             .presentationDetents([.medium, .large])
         }
@@ -886,9 +918,10 @@ private struct PlanPreviewCard: View {
     let isPersonalized: Bool
     let status: PlanStatus?
     let onTap: () -> Void
+    let hasAvailablePersonalizedPlan: Bool
 
     private var headline: String {
-        isPersonalized ? "Your tailored plan" : "Personalized plan"
+        isPersonalized ? "Your tailored plan" : "Baseline routine"
     }
 
     private var badgeText: String {
@@ -904,18 +937,26 @@ private struct PlanPreviewCard: View {
 
     private var progressMessage: String {
         let refreshInterval = max(status?.refreshInterval ?? 10, 1)
-        let planAvailable = status?.planAvailable ?? isPersonalized
         let remaining = max(status?.scansUntilNextPlan ?? refreshInterval, 0)
+        let planAvailable = status?.planAvailable ?? hasAvailablePersonalizedPlan
 
-        if planAvailable {
-            if remaining <= 0 {
-                return "Your next scan refreshes this routine."
+        if isPersonalized {
+            if planAvailable {
+                if remaining <= 0 {
+                    return "Your next scan refreshes this routine."
+                }
+                let noun = remaining == 1 ? "scan" : "scans"
+                return "Next refresh in \(remaining) \(noun)."
+            } else {
+                if remaining <= 0 {
+                    return "Your next scan unlocks your personalized plan."
+                }
+                let noun = remaining == 1 ? "scan" : "scans"
+                return "\(remaining) more \(noun) to unlock your plan."
             }
-            let noun = remaining == 1 ? "scan" : "scans"
-            return "Next refresh in \(remaining) \(noun)."
         } else {
-            if remaining <= 0 {
-                return "One more scan unlocks your personalized plan."
+            if planAvailable {
+                return "Baseline routine active. Toggle on your tailored plan anytime."
             }
             let noun = remaining == 1 ? "scan" : "scans"
             return "\(remaining) more \(noun) to unlock your plan."
@@ -976,41 +1017,86 @@ private struct PlanPreviewCard: View {
 }
 
 private struct PlanSheetView: View {
-    let plan: Recommendations
+    let personalizedPlan: Recommendations?
     let baselinePlan: Recommendations
     let status: PlanStatus?
-    let isPersonalized: Bool
-
-    private var planAvailable: Bool {
-        status?.planAvailable ?? isPersonalized
-    }
+    let canUsePersonalizedPlan: Bool
+    @Binding var displayMode: PlanDisplayMode
 
     private var refreshInterval: Int {
         max(status?.refreshInterval ?? 10, 1)
+    }
+
+    private var planAvailable: Bool {
+        status?.planAvailable ?? canUsePersonalizedPlan
+    }
+
+    private var isPersonalizedActive: Bool {
+        canUsePersonalizedPlan && displayMode == .personalized && personalizedPlan != nil
+    }
+
+    private var activePlan: Recommendations {
+        if isPersonalizedActive, let personalizedPlan {
+            return personalizedPlan
+        }
+        return baselinePlan
+    }
+
+    private var activeSectionTitle: String {
+        isPersonalizedActive ? "Your personalized routine" : "Baseline routine"
+    }
+
+    private var activeSectionDescription: String? {
+        sectionDescription(for: isPersonalizedActive ? .personalized : .baseline)
+    }
+
+    private var personalizedToggleBinding: Binding<Bool> {
+        Binding(
+            get: { isPersonalizedActive },
+            set: { newValue in
+                displayMode = (newValue && planAvailable) ? .personalized : .baseline
+            }
+        )
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: AppSpacing.l) {
-                    PlanProgressBanner(status: status, isPersonalized: isPersonalized)
-                        .accessibilityIdentifier("plan_progress_banner")
+                    VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                        Toggle(isOn: personalizedToggleBinding) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Use tailored plan")
+                                    .font(.headline)
+                                Text(toggleSubtitle)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                        .disabled(!planAvailable)
+                        .accessibilityIdentifier("plan_mode_toggle")
+
+                        if !planAvailable {
+                            Text("Keep scanning—your tailored routine unlocks automatically soon.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    PlanProgressBanner(
+                        status: status,
+                        isPersonalized: isPersonalizedActive,
+                        hasAvailablePersonalizedPlan: planAvailable
+                    )
+                    .accessibilityIdentifier("plan_progress_banner")
 
                     PlanTimelineView(
-                        plan: plan,
-                        sectionTitle: planAvailable ? "Your personalized routine" : "Baseline routine",
-                        sectionDescription: planSectionDescription,
+                        plan: activePlan,
+                        sectionTitle: activeSectionTitle,
+                        sectionDescription: activeSectionDescription,
                         maxItemsPerCategory: 3
                     )
-
-                    if planAvailable {
-                        PlanTimelineView(
-                            plan: baselinePlan,
-                            sectionTitle: "Baseline essentials",
-                            sectionDescription: "Keep these fundamentals in play between refreshes.",
-                            maxItemsPerCategory: 3
-                        )
-                    }
 
                     Text("Plans refresh every \(refreshInterval) scans to stay aligned with your habits.")
                         .font(.footnote)
@@ -1024,29 +1110,47 @@ private struct PlanSheetView: View {
         }
     }
 
-    private var planSectionDescription: String? {
+    private func sectionDescription(for mode: PlanDisplayMode) -> String? {
+        switch mode {
+        case .personalized:
+            if planAvailable {
+                return "Tailored from your recent scans and stain tags."
+            }
+            let remaining = max(status?.scansUntilNextPlan ?? refreshInterval, 0)
+            if remaining <= 0 {
+                return "Your next scan will unlock your tailored routine."
+            }
+            let noun = remaining == 1 ? "scan" : "scans"
+            return "Complete \(remaining) more \(noun) to unlock your tailored routine."
+        case .baseline:
+            if planAvailable {
+                return "Steady essentials to follow whenever you pause the tailored routine."
+            } else {
+                return "Follow these essentials while we finish preparing your tailored routine."
+            }
+        }
+    }
+
+    private var toggleSubtitle: String {
         if planAvailable {
-            return "Tailored from your recent scans and stain tags."
+            return "Switch off to follow the baseline essentials instead."
+        } else {
+            return "Baseline essentials stay active until your tailored plan is ready."
         }
-        let remaining = max(status?.scansUntilNextPlan ?? refreshInterval, 0)
-        if remaining <= 0 {
-            return "Your next scan will unlock your tailored routine."
-        }
-        let noun = remaining == 1 ? "scan" : "scans"
-        return "Complete \(remaining) more \(noun) to unlock your tailored routine."
     }
 }
 
 private struct PlanProgressBanner: View {
     let status: PlanStatus?
     let isPersonalized: Bool
+    let hasAvailablePersonalizedPlan: Bool
 
     private var refreshInterval: Int {
         max(status?.refreshInterval ?? 10, 1)
     }
 
     private var planAvailable: Bool {
-        status?.planAvailable ?? isPersonalized
+        status?.planAvailable ?? hasAvailablePersonalizedPlan
     }
 
     private var remainingScans: Int {
