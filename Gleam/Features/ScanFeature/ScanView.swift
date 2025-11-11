@@ -223,7 +223,7 @@ struct ScanView: View {
             .map { $0.contextTags }
 
         do {
-            let result = try await scanRepository.analyze(
+            let outcome = try await scanRepository.analyze(
                 imageData: data,
                 tags: tagKeywords,
                 previousTakeaways: Array(previousTakeaways),
@@ -231,11 +231,11 @@ struct ScanView: View {
             )
             // Save result with image data and tag context
             historyStore.append(
-                result,
+                outcome: outcome,
                 imageData: data,
-                contextTags: selectedTags.map { $0.id }
+                fallbackContextTags: selectedTags.map { $0.id }
             )
-            onFinished(result)
+            onFinished(outcome.result)
         } catch { }
     }
 

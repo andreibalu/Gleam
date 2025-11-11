@@ -21,14 +21,18 @@ struct GleamApp: App {
         let historyRepository = PersistentHistoryRepository()
         let authRepository = FirebaseAuthRepository()
         self.authRepository = authRepository
-        self.scanRepository = RemoteScanRepository(
+        let remoteScanRepository = RemoteScanRepository(
             httpClient: DefaultHTTPClient(),
             authRepository: authRepository
         )
+        self.scanRepository = remoteScanRepository
         _historyStore = StateObject(wrappedValue: HistoryStore(
             repository: historyRepository,
             appendHandler: { item in
                 Task { await historyRepository.insert(item) }
+            },
+            remoteDeletionHandler: { id in
+                try await remoteScanRepository.deleteHistoryItem(id: id)
             }
         ))
     }

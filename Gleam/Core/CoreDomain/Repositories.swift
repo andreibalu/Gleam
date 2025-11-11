@@ -7,9 +7,11 @@ protocol ScanRepository {
         tags: [String],
         previousTakeaways: [String],
         recentTagHistory: [[String]]
-    ) async throws -> ScanResult
-    func generatePlan(history: [PlanHistoryContext]) async throws -> Recommendations
+    ) async throws -> AnalyzeOutcome
     func fetchLatest() async throws -> ScanResult?
+    func fetchLatestPlan() async throws -> PlanOutcome?
+    func fetchHistory(limit: Int) async throws -> [HistoryItem]
+    func deleteHistoryItem(id: String) async throws
 }
 
 protocol HistoryRepository {

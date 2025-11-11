@@ -33,6 +33,11 @@ actor PersistentHistoryRepository: HistoryRepository {
         try? persistStorage()
     }
 
+    func replaceAll(with items: [HistoryItem]) {
+        storage = items
+        try? persistStorage()
+    }
+
     func resetAll() {
         storage.removeAll()
         if fileManager.fileExists(atPath: storageURL.path) {

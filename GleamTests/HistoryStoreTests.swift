@@ -17,7 +17,11 @@ final class HistoryStoreTests: XCTestCase {
     func testDeleteRemovesItemAndCallsRepository() async throws {
         let initial = sampleItems()
         let repository = HistoryRepositorySpy(listResult: initial)
-        let store = HistoryStore(repository: repository)
+        let remoteDeletionSpy = RemoteDeletionSpy()
+        let store = HistoryStore(
+            repository: repository,
+            remoteDeletionHandler: remoteDeletionSpy.delete
+        )
 
         await store.load()
         let itemToDelete = try XCTUnwrap(store.items.first)
@@ -26,6 +30,7 @@ final class HistoryStoreTests: XCTestCase {
 
         XCTAssertFalse(store.items.contains(itemToDelete))
         XCTAssertEqual(repository.deletedIds, [itemToDelete.id])
+        XCTAssertEqual(remoteDeletionSpy.deletedIds, [itemToDelete.id])
     }
 
     func testAppendAddsNewItemAtTop() async throws {
@@ -34,20 +39,24 @@ final class HistoryStoreTests: XCTestCase {
         let expectedDate = Date(timeIntervalSince1970: 1_000)
         let store = HistoryStore(
             repository: repository,
-            idGenerator: { expectedId },
             dateProvider: { expectedDate }
         )
 
-        let result = SampleData.sampleResult
+        let outcome = AnalyzeOutcome(
+            id: expectedId,
+            createdAt: expectedDate,
+            result: SampleData.sampleResult,
+            contextTags: []
+        )
 
         await store.load()
-        store.append(result, imageData: nil, contextTags: [])
+        store.append(outcome: outcome, imageData: nil, fallbackContextTags: [])
 
         XCTAssertEqual(store.items.count, 1)
         let newItem = try XCTUnwrap(store.items.first)
         XCTAssertEqual(newItem.id, expectedId)
         XCTAssertEqual(newItem.createdAt, expectedDate)
-        XCTAssertEqual(newItem.result, result)
+        XCTAssertEqual(newItem.result, outcome.result)
     }
 
     private func sampleItems() -> [HistoryItem] {
@@ -76,5 +85,13 @@ private final class HistoryRepositorySpy: HistoryRepository {
     func delete(id: String) async throws {
         deletedIds.append(id)
         listResult.removeAll { $0.id == id }
+    }
+}
+
+private final class RemoteDeletionSpy {
+    private(set) var deletedIds: [String] = []
+
+    func delete(id: String) async throws {
+        deletedIds.append(id)
     }
 }

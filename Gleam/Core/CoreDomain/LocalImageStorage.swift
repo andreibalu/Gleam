@@ -54,6 +54,23 @@ actor LocalImageStorage {
         let imageURL = imageURL(for: historyItemId)
         try? fileManager.removeItem(at: imageURL)
     }
+
+    /// Moves an image from one history identifier to another.
+    func moveImage(from oldHistoryItemId: String, to newHistoryItemId: String) {
+        let oldURL = imageURL(for: oldHistoryItemId)
+        let newURL = imageURL(for: newHistoryItemId)
+
+        guard fileManager.fileExists(atPath: oldURL.path) else { return }
+
+        do {
+            if fileManager.fileExists(atPath: newURL.path) {
+                try fileManager.removeItem(at: newURL)
+            }
+            try fileManager.moveItem(at: oldURL, to: newURL)
+        } catch {
+            // Ignore rename failures; image is optional
+        }
+    }
     
     private func imageURL(for historyItemId: String) -> URL {
         imagesDirectory.appendingPathComponent("\(historyItemId).jpg", isDirectory: false)

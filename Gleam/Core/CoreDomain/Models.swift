@@ -76,13 +76,73 @@ struct Recommendations: Codable, Equatable, Hashable {
     let caution: [String]
 }
 
-struct PlanHistoryContext: Codable, Equatable, Hashable {
-    let capturedAt: Date
-    let whitenessScore: Int
-    let shade: String
-    let detectedIssues: [DetectedIssue]
-    let lifestyleTags: [String]
-    let personalTakeaway: String
+enum PlanSource: String, Equatable {
+    case `default`
+    case latestCache = "latest-cache"
+    case openai
+}
+
+enum PlanStatusReason: String, Equatable {
+    case missingHistory = "missing-history"
+    case historyIdentical = "history-identical"
+    case latestRequest = "latest-request"
+    case insufficientScans = "insufficient-scans"
+    case awaitingRefresh = "awaiting-refresh"
+}
+
+struct PlanStatus: Equatable {
+    let source: PlanSource
+    let isUnchanged: Bool
+    let reason: PlanStatusReason?
+    let inputHash: String?
+    let updatedAt: Date?
+    let totalScans: Int?
+    let scansUntilNextPlan: Int?
+    let scansSinceLastPlan: Int?
+    let latestPlanScanCount: Int?
+    let planAvailable: Bool?
+    let nextPlanAtScanCount: Int?
+    let refreshInterval: Int?
+
+    init(
+        source: PlanSource,
+        isUnchanged: Bool,
+        reason: PlanStatusReason?,
+        inputHash: String?,
+        updatedAt: Date?,
+        totalScans: Int? = nil,
+        scansUntilNextPlan: Int? = nil,
+        scansSinceLastPlan: Int? = nil,
+        latestPlanScanCount: Int? = nil,
+        planAvailable: Bool? = nil,
+        nextPlanAtScanCount: Int? = nil,
+        refreshInterval: Int? = nil
+    ) {
+        self.source = source
+        self.isUnchanged = isUnchanged
+        self.reason = reason
+        self.inputHash = inputHash
+        self.updatedAt = updatedAt
+        self.totalScans = totalScans
+        self.scansUntilNextPlan = scansUntilNextPlan
+        self.scansSinceLastPlan = scansSinceLastPlan
+        self.latestPlanScanCount = latestPlanScanCount
+        self.planAvailable = planAvailable
+        self.nextPlanAtScanCount = nextPlanAtScanCount
+        self.refreshInterval = refreshInterval
+    }
+}
+
+struct PlanOutcome: Equatable {
+    let plan: Recommendations
+    let status: PlanStatus?
+}
+
+struct AnalyzeOutcome: Equatable {
+    let id: String
+    let createdAt: Date
+    let result: ScanResult
+    let contextTags: [String]
 }
 
 enum AppError: Error, LocalizedError, Equatable {

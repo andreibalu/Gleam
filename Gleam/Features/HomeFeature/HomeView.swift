@@ -8,9 +8,8 @@ struct HomeView: View {
     @State private var lastResult: ScanResult?
     @State private var showCamera = false
     @State private var showPlanSheet = false
-    @State private var isGeneratingPlan = false
-    @State private var planErrorMessage: String?
-    @State private var personalizedPlan: Recommendations?
+    @State private var personalizedPlan: PlanOutcome?
+    @State private var hasSyncedCloudState = false
 
     private let shadeStages = ShadeStage.defaults
     private let defaultPlan = Recommendations(
@@ -34,28 +33,22 @@ struct HomeView: View {
     )
 
     private var currentPlan: Recommendations {
-        personalizedPlan ?? defaultPlan
+        personalizedPlan?.plan ?? defaultPlan
     }
 
     private var hasPersonalizedPlan: Bool {
-        personalizedPlan != nil
-    }
-
-    private var planHistoryContexts: [PlanHistoryContext] {
-        historyStore.items.prefix(5).map { item in
-            PlanHistoryContext(
-                capturedAt: item.createdAt,
-                whitenessScore: item.result.whitenessScore,
-                shade: item.result.shade,
-                detectedIssues: item.result.detectedIssues,
-                lifestyleTags: lifestyleKeywords(for: item.contextTags),
-                personalTakeaway: item.result.personalTakeaway
-            )
+        guard let status = personalizedPlan?.status else { return false }
+        if let planAvailable = status.planAvailable {
+            return planAvailable
         }
+        if status.source == .default {
+            return false
+        }
+        return true
     }
 
-    private var canPersonalizePlan: Bool {
-        !planHistoryContexts.isEmpty
+    private var planStatus: PlanStatus? {
+        personalizedPlan?.status
     }
 
     var body: some View {
@@ -90,6 +83,7 @@ struct HomeView: View {
                 PlanPreviewCard(
                     plan: currentPlan,
                     isPersonalized: hasPersonalizedPlan,
+                    status: planStatus,
                     onTap: { showPlanSheet = true }
                 )
 
@@ -128,18 +122,13 @@ struct HomeView: View {
             PlanSheetView(
                 plan: currentPlan,
                 baselinePlan: defaultPlan,
-                isPersonalized: hasPersonalizedPlan,
-                isGenerating: isGeneratingPlan,
-                canPersonalize: canPersonalizePlan,
-                planHistoryCount: planHistoryContexts.count,
-                errorMessage: planErrorMessage,
-                onMakeItYourOwn: generatePersonalizedPlan,
-                onReset: resetPlan
+                status: planStatus,
+                isPersonalized: hasPersonalizedPlan
             )
             .presentationDetents([.medium, .large])
         }
         .task {
-            await loadLatestResult()
+            await loadInitialData()
         }
         .onChange(of: scanSession.shouldOpenCamera) { _, shouldOpen in
             if shouldOpen {
@@ -147,12 +136,14 @@ struct HomeView: View {
                 scanSession.shouldOpenCamera = false
             }
         }
-        .onChange(of: historyStore.items) { _, items in
-            if let latest = items.first?.result {
+        .onChange(of: historyStore.items) { previousItems, newItems in
+            if let latest = newItems.first?.result {
                 lastResult = latest
             }
-            if canPersonalizePlan {
-                planErrorMessage = nil
+            if newItems.count > previousItems.count {
+                Task {
+                    await loadLatestPlan()
+                }
             }
         }
         .onAppear {
@@ -164,9 +155,58 @@ struct HomeView: View {
 
     private func loadLatestResult() async {
         do {
-            lastResult = try await scanRepository.fetchLatest()
+            let latest = try await scanRepository.fetchLatest()
+            await MainActor.run {
+                lastResult = latest
+            }
         } catch {
             // The experience still works without a cached score
+        }
+    }
+
+    private func loadInitialData() async {
+        await loadLatestResult()
+        let shouldSync = await MainActor.run { markCloudSyncStarted() }
+        guard shouldSync else { return }
+        async let historyTask: Void = syncHistoryFromCloud()
+        async let planTask: Void = loadLatestPlan()
+        _ = await (historyTask, planTask)
+    }
+
+    @MainActor
+    private func markCloudSyncStarted() -> Bool {
+        if hasSyncedCloudState { return false }
+        hasSyncedCloudState = true
+        return true
+    }
+
+    private func syncHistoryFromCloud() async {
+        do {
+            let remoteItems = try await scanRepository.fetchHistory(limit: 40)
+            await historyStore.sync(with: remoteItems)
+            if let latest = remoteItems.first?.result {
+                await MainActor.run {
+                    lastResult = latest
+                }
+            }
+        } catch {
+            // Ignore sync errors; local history still works
+        }
+    }
+
+    private func loadLatestPlan() async {
+        do {
+            if let plan = try await scanRepository.fetchLatestPlan() {
+                await MainActor.run {
+                    personalizedPlan = plan
+                }
+            } else {
+                await MainActor.run {
+                    personalizedPlan = nil
+                }
+            }
+        } catch {
+            // Ignore fetch errors; experience still works with cached plan
         }
     }
 
@@ -325,70 +365,6 @@ struct HomeView: View {
         ]
     }
 
-    private func lifestyleKeywords(for tagIds: [String]) -> [String] {
-        let lookup = Dictionary(uniqueKeysWithValues: StainTag.defaults.map { ($0.id, $0.promptKeyword) })
-        return tagIds.compactMap { lookup[$0] }
-    }
-
-    private func generatePersonalizedPlan() {
-        guard canPersonalizePlan else {
-            planErrorMessage = "Take at least one scan to personalize your plan."
-            return
-        }
-        guard !isGeneratingPlan else { return }
-
-        isGeneratingPlan = true
-        planErrorMessage = nil
-        let contexts = planHistoryContexts
-        
-        print("🔍 Attempting to generate plan with \(contexts.count) history entries")
-        if contexts.isEmpty {
-            print("⚠️ Warning: planHistoryContexts is empty but canPersonalizePlan is true")
-        }
-
-        Task {
-            do {
-                let plan = try await scanRepository.generatePlan(history: contexts)
-                await MainActor.run {
-                    planErrorMessage = nil
-                    withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
-                        personalizedPlan = plan
-                    }
-                }
-            } catch let appError as AppError {
-                await MainActor.run {
-                    switch appError {
-                    case .network:
-                        planErrorMessage = "Connection issue. Check your connection and try again."
-                    case .unauthorized:
-                        planErrorMessage = "Please sign back in to personalize your plan."
-                    case .decoding:
-                        planErrorMessage = "We got an unexpected response. Give it another go soon."
-                    case .invalidImage:
-                        planErrorMessage = "We couldn't personalize with your latest scans. Try again soon."
-                    case .unknown:
-                        planErrorMessage = "We couldn't personalize right now. Try again in a bit."
-                    }
-                    print("⚠️ Plan generation failed with AppError: \(appError)")
-                }
-            } catch {
-                await MainActor.run {
-                    planErrorMessage = "We couldn't personalize right now. Try again in a bit."
-                    print("⚠️ Plan generation failed with unexpected error: \(error)")
-                    print("⚠️ Error type: \(type(of: error))")
-                    print("⚠️ Error description: \(error.localizedDescription)")
-                }
-            }
-            await MainActor.run {
-                isGeneratingPlan = false
-            }
-        }
-    }
-
-    private func resetPlan() {
-        personalizedPlan = nil
-        planErrorMessage = nil
-    }
 }
 
 // MARK: - Supporting Models
@@ -908,6 +884,7 @@ private struct LearnCardView: View {
 private struct PlanPreviewCard: View {
     let plan: Recommendations
     let isPersonalized: Bool
+    let status: PlanStatus?
     let onTap: () -> Void
 
     private var headline: String {
@@ -923,6 +900,26 @@ private struct PlanPreviewCard: View {
         let daily = plan.daily.first
         let caution = plan.caution.first
         return [immediate, daily, caution].compactMap { $0 }
+    }
+
+    private var progressMessage: String {
+        let refreshInterval = max(status?.refreshInterval ?? 10, 1)
+        let planAvailable = status?.planAvailable ?? isPersonalized
+        let remaining = max(status?.scansUntilNextPlan ?? refreshInterval, 0)
+
+        if planAvailable {
+            if remaining <= 0 {
+                return "Your next scan refreshes this routine."
+            }
+            let noun = remaining == 1 ? "scan" : "scans"
+            return "Next refresh in \(remaining) \(noun)."
+        } else {
+            if remaining <= 0 {
+                return "One more scan unlocks your personalized plan."
+            }
+            let noun = remaining == 1 ? "scan" : "scans"
+            return "\(remaining) more \(noun) to unlock your plan."
+        }
     }
 
     var body: some View {
@@ -954,9 +951,14 @@ private struct PlanPreviewCard: View {
                     }
                 }
 
-                Text("Tap to view the full routine")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                    Text(progressMessage)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text("Tap to view the full routine")
+                        .font(.caption)
+                        .foregroundStyle(.secondary.opacity(0.9))
+                }
             }
             .padding()
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -976,79 +978,44 @@ private struct PlanPreviewCard: View {
 private struct PlanSheetView: View {
     let plan: Recommendations
     let baselinePlan: Recommendations
+    let status: PlanStatus?
     let isPersonalized: Bool
-    let isGenerating: Bool
-    let canPersonalize: Bool
-    let planHistoryCount: Int
-    let errorMessage: String?
-    let onMakeItYourOwn: () -> Void
-    let onReset: () -> Void
+
+    private var planAvailable: Bool {
+        status?.planAvailable ?? isPersonalized
+    }
+
+    private var refreshInterval: Int {
+        max(status?.refreshInterval ?? 10, 1)
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: AppSpacing.l) {
-                    if isPersonalized {
-                        PersonalizedPlanHighlights(plan: plan, historyCount: planHistoryCount)
-                            .accessibilityIdentifier("personalized_plan_highlights")
-                        PlanStatusHeader(isPersonalized: false, historyCount: planHistoryCount)
-                    } else {
-                        PlanStatusHeader(isPersonalized: false, historyCount: planHistoryCount)
-                    }
+                    PlanProgressBanner(status: status, isPersonalized: isPersonalized)
+                        .accessibilityIdentifier("plan_progress_banner")
 
                     PlanTimelineView(
-                        plan: isPersonalized ? baselinePlan : plan,
-                        sectionTitle: isPersonalized ? "Baseline essentials" : nil,
-                        sectionDescription: isPersonalized ? "Keep these fundamentals in play while you follow your tailored routine." : nil,
+                        plan: plan,
+                        sectionTitle: planAvailable ? "Your personalized routine" : "Baseline routine",
+                        sectionDescription: planSectionDescription,
                         maxItemsPerCategory: 3
                     )
 
-                    if let errorMessage {
-                        Text(errorMessage)
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                            .padding()
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: AppRadius.small))
+                    if planAvailable {
+                        PlanTimelineView(
+                            plan: baselinePlan,
+                            sectionTitle: "Baseline essentials",
+                            sectionDescription: "Keep these fundamentals in play between refreshes.",
+                            maxItemsPerCategory: 3
+                        )
                     }
 
-                    VStack(spacing: AppSpacing.s) {
-                        Button {
-                            onMakeItYourOwn()
-                        } label: {
-                            HStack {
-                                if isGenerating {
-                                    ProgressView()
-                                }
-                                Text(isGenerating ? "Shaping your plan..." : (isPersonalized ? "Refresh your tailored plan" : "Make it your own"))
-                                    .font(.headline)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                        }
-                        .buttonStyle(FloatingPrimaryButtonStyle())
-                        .disabled(isGenerating || !canPersonalize)
-                        .opacity(isGenerating || !canPersonalize ? 0.6 : 1.0)
-
-                        if !canPersonalize {
-                            Text("Take at least one scan to tailor your plan.")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                        }
-
-                        if isPersonalized {
-                            Button {
-                                onReset()
-                            } label: {
-                                Text("Use baseline plan")
-                                    .font(.headline)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 14)
-                            }
-                            .buttonStyle(FloatingSecondaryButtonStyle())
-                        }
-                    }
+                    Text("Plans refresh every \(refreshInterval) scans to stay aligned with your habits.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding()
             }
@@ -1056,145 +1023,97 @@ private struct PlanSheetView: View {
             .navigationBarTitleDisplayMode(.inline)
         }
     }
-}
 
-private struct PersonalizedPlanHighlights: View {
-    let plan: Recommendations
-    let historyCount: Int
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.m) {
-            VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                HStack(spacing: AppSpacing.xs) {
-                    Image(systemName: "sparkles")
-                        .foregroundStyle(Color.white)
-                    Text("Custom routine active")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color.white)
-                }
-                Text(historySummary)
-                    .font(.footnote)
-                    .foregroundStyle(Color.white.opacity(0.85))
-            }
-
-            VStack(alignment: .leading, spacing: AppSpacing.s) {
-                ForEach(PlanCategory.allCases, id: \.self) { category in
-                    if let highlight = highlight(for: category) {
-                        PersonalizedPlanRow(category: category, text: highlight)
-                    }
-                }
-            }
+    private var planSectionDescription: String? {
+        if planAvailable {
+            return "Tailored from your recent scans and stain tags."
         }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.48, green: 0.62, blue: 1.0),
-                            Color(red: 0.37, green: 0.51, blue: 0.96)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-        )
-        .shadow(color: Color.black.opacity(0.12), radius: 18, x: 0, y: 12)
-    }
-
-    private func highlight(for category: PlanCategory) -> String? {
-        switch category {
-        case .immediate:
-            plan.immediate.first
-        case .daily:
-            plan.daily.first
-        case .weekly:
-            plan.weekly.first
-        case .caution:
-            plan.caution.first
+        let remaining = max(status?.scansUntilNextPlan ?? refreshInterval, 0)
+        if remaining <= 0 {
+            return "Your next scan will unlock your tailored routine."
         }
-    }
-
-    private var historySummary: String {
-        switch historyCount {
-        case 0:
-            return "Personalized from your latest scan insights."
-        case 1:
-            return "Personalized from your most recent scan and habits."
-        case 2:
-            return "Built from your last 2 scans and lifestyle tags."
-        default:
-            return "Built from your latest \(historyCount) scans and lifestyle tags."
-        }
+        let noun = remaining == 1 ? "scan" : "scans"
+        return "Complete \(remaining) more \(noun) to unlock your tailored routine."
     }
 }
 
-private struct PersonalizedPlanRow: View {
-    let category: PlanCategory
-    let text: String
-
-    var body: some View {
-        HStack(alignment: .top, spacing: AppSpacing.m) {
-            ZStack {
-                Circle()
-                    .fill(Color.white.opacity(0.18))
-                    .frame(width: 42, height: 42)
-                Image(systemName: category.icon)
-                    .foregroundStyle(.white)
-                    .font(.headline)
-            }
-
-            VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                Text(category.title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color.white.opacity(0.95))
-                Text(text)
-                    .font(.footnote)
-                    .foregroundStyle(Color.white.opacity(0.9))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                .fill(Color.white.opacity(0.12))
-        )
-    }
-}
-
-private struct PlanStatusHeader: View {
+private struct PlanProgressBanner: View {
+    let status: PlanStatus?
     let isPersonalized: Bool
-    let historyCount: Int
+
+    private var refreshInterval: Int {
+        max(status?.refreshInterval ?? 10, 1)
+    }
+
+    private var planAvailable: Bool {
+        status?.planAvailable ?? isPersonalized
+    }
+
+    private var remainingScans: Int {
+        max(status?.scansUntilNextPlan ?? refreshInterval, 0)
+    }
+
+    private var icon: String {
+        planAvailable ? "arrow.triangle.2.circlepath" : "sparkles"
+    }
+
+    private var tint: Color {
+        planAvailable ? Color.accentColor : Color.secondary
+    }
+
+    private var headline: String {
+        if planAvailable {
+            if remainingScans <= 0 {
+                return "Your next scan will refresh your personalized routine."
+            } else if remainingScans == 1 {
+                return "One more scan will refresh your personalized routine."
+            } else {
+                return "\(remainingScans) more scans until your refreshed routine."
+            }
+        } else {
+            if remainingScans <= 0 {
+                return "You're one scan away from unlocking your personalized routine."
+            } else if remainingScans == 1 {
+                return "One more scan unlocks your personalized routine."
+            } else {
+                return "\(remainingScans) more scans to unlock your personalized routine."
+            }
+        }
+    }
+
+    private var detail: String {
+        planAvailable ?
+            "We refresh your plan every \(refreshInterval) scans to keep pace with your progress." :
+            "We build your first plan after \(refreshInterval) scans so it truly reflects your habits."
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.xs) {
-            HStack(spacing: AppSpacing.xs) {
-                Image(systemName: isPersonalized ? "sparkles" : "calendar")
-                    .foregroundStyle(isPersonalized ? Color.blue : Color.secondary)
-                Text(isPersonalized ? "Custom routine active" : "Starting from the essentials")
+            HStack(alignment: .top, spacing: AppSpacing.s) {
+                Image(systemName: icon)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(tint)
+                    .accessibilityHidden(true)
+                Text(headline)
                     .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(tint)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.horizontal, AppSpacing.s)
-            .padding(.vertical, 8)
-            .background((isPersonalized ? Color.blue : Color.secondary).opacity(0.12))
-            .clipShape(Capsule())
 
-            Text(historyHint)
+            Text(detail)
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(tint.opacity(0.9))
+                .fixedSize(horizontal: false, vertical: true)
         }
-    }
-
-    private var historyHint: String {
-        if historyCount == 0 {
-            return "We need a recent scan to tailor this routine."
-        }
-        if historyCount == 1 {
-            return "Personalizing from your most recent scan."
-        }
-        return "Personalizing from your latest \(historyCount) scans."
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                .fill(tint.opacity(0.12))
+        )
     }
 }
+
 
 private struct PlanTimelineView: View {
     let plan: Recommendations

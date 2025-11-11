@@ -12,18 +12,21 @@ final class HistoryStore: ObservableObject {
     private let idGenerator: () -> String
     private let dateProvider: () -> Date
     private let appendHandler: (HistoryItem) -> Void
+    private let remoteDeletionHandler: (String) async throws -> Void
     private var didResetForUITests = false
 
     init(
         repository: any HistoryRepository,
         idGenerator: @escaping () -> String = { UUID().uuidString },
         dateProvider: @escaping () -> Date = Date.init,
-        appendHandler: @escaping (HistoryItem) -> Void = { _ in }
+        appendHandler: @escaping (HistoryItem) -> Void = { _ in },
+        remoteDeletionHandler: @escaping (String) async throws -> Void = { _ in }
     ) {
         self.repository = repository
         self.idGenerator = idGenerator
         self.dateProvider = dateProvider
         self.appendHandler = appendHandler
+        self.remoteDeletionHandler = remoteDeletionHandler
     }
 
     func load() async {
@@ -44,18 +47,27 @@ final class HistoryStore: ObservableObject {
 
     func delete(_ item: HistoryItem) async {
         do {
+            try await remoteDeletionHandler(item.id)
+        } catch {
+            print("⚠️ Failed to delete remote history item: \(error)")
+        }
+
+        do {
             try await repository.delete(id: item.id)
-            // Delete associated image
-            await imageStorage.deleteImage(for: item.id)
-            items.removeAll { $0.id == item.id }
         } catch { }
+
+        await imageStorage.deleteImage(for: item.id)
+        items.removeAll { $0.id == item.id }
+        calculateStreaks()
     }
 
-    func append(_ result: ScanResult, imageData: Data?, contextTags: [String]) {
+    func append(outcome: AnalyzeOutcome, imageData: Data?, fallbackContextTags: [String]) {
+        let identifier = outcome.id.isEmpty ? idGenerator() : outcome.id
+        let contextTags = outcome.contextTags.isEmpty ? fallbackContextTags : outcome.contextTags
         let newItem = HistoryItem(
-            id: idGenerator(),
-            createdAt: dateProvider(),
-            result: result,
+            id: identifier,
+            createdAt: outcome.createdAt,
+            result: outcome.result,
             contextTags: contextTags
         )
         
@@ -73,6 +85,56 @@ final class HistoryStore: ObservableObject {
         appendHandler(newItem)
         items.insert(newItem, at: 0)
         calculateStreaks()
+    }
+    
+    func sync(with remoteItems: [HistoryItem]) async {
+        // Merge remote history without discarding local items (to preserve local photos).
+        // A remote item is considered a duplicate of a local one if:
+        // - ScanResult matches AND createdAt is within a short window (2 minutes).
+        // This keeps local IDs (used for photo filenames) intact.
+        let mergeWindow: TimeInterval = 120
+        let localCount = items.count
+        let remoteCount = remoteItems.count
+        var merged = items
+        var duplicatesFound = 0
+        
+        // Helper to decide if two items represent the same scan event
+        func isSameScan(_ a: HistoryItem, _ b: HistoryItem) -> Bool {
+            let timeDelta = abs(a.createdAt.timeIntervalSince(b.createdAt))
+            return a.result == b.result && timeDelta <= mergeWindow
+        }
+        
+        for remote in remoteItems {
+            if let existingIndex = merged.firstIndex(where: { isSameScan($0, remote) }) {
+                let existingItem = merged[existingIndex]
+                if existingItem.id != remote.id {
+                    await imageStorage.moveImage(from: existingItem.id, to: remote.id)
+                }
+                merged[existingIndex] = HistoryItem(
+                    id: remote.id,
+                    createdAt: remote.createdAt,
+                    result: remote.result,
+                    contextTags: remote.contextTags
+                )
+                duplicatesFound += 1
+                continue
+            }
+            // Otherwise, add the remote entry (it won't have a local photo, which is expected)
+            merged.append(remote)
+        }
+        
+        // Sort newest first for UI
+        merged.sort { $0.createdAt > $1.createdAt }
+        items = merged
+        calculateStreaks()
+        
+        // Log merge stats for observability
+        print("📊 History sync: local=\(localCount), remote=\(remoteCount), duplicates=\(duplicatesFound), final=\(merged.count)")
+        
+        // Persist merged set locally so it survives app restarts
+        if let persistent = repository as? PersistentHistoryRepository {
+            await persistent.replaceAll(with: merged)
+        }
     }
     
     func loadImage(for historyItemId: String) async -> Data? {

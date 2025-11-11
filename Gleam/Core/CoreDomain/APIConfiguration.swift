@@ -22,8 +22,17 @@ enum APIConfiguration {
         configuredURL(for: "API_PLAN_URL") ?? defaultURL(for: "plan")
     }
     
+    static var planLatestURL: URL {
+        configuredURL(for: "API_PLAN_LATEST_URL") ??
+        defaultURL(for: "planLatest", extraPath: "latest")
+    }
+    
     static var historyLatestURL: URL {
         configuredURL(for: "API_HISTORY_LATEST_URL") ?? defaultURL(for: "history", extraPath: "latest")
+    }
+    
+    static var historyURL: URL {
+        configuredURL(for: "API_HISTORY_URL") ?? defaultURL(for: "history")
     }
     
     // Backwards compatibility
