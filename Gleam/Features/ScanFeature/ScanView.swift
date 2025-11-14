@@ -236,10 +236,12 @@ struct ScanView: View {
         case .noFace:
             errorMessage = "No face detected in this photo. Please take a photo that clearly shows a person's face."
             showErrorAlert = true
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
             return
-        case .noTeeth:
-            errorMessage = "We couldn't detect teeth in this photo. Please make sure your smile is visible and try again."
+        case .noSmile:
+            errorMessage = "Please smile to show your teeth! We need to see your teeth clearly for the analysis."
             showErrorAlert = true
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
             return
         case .valid:
             break
@@ -288,10 +290,10 @@ struct ScanView: View {
     private enum FaceValidationResult {
         case valid
         case noFace
-        case noTeeth
+        case noSmile
     }
     
-    /// Validates that the image contains a human face and detectable teeth
+    /// Validates that the image contains a human face and that the person is smiling/showing teeth
     private func validateImageContainsFace(imageData: Data) async -> FaceValidationResult {
         guard let image = UIImage(data: imageData),
               let cgImage = image.cgImage else {
@@ -305,16 +307,90 @@ struct ScanView: View {
                     return
                 }
                 
+                // Check if any face is detected
                 guard let observations = req.results as? [VNFaceObservation],
                       let firstFace = observations.first else {
                     continuation.resume(returning: .noFace)
                     return
                 }
                 
-                // Check if we can detect mouth/teeth landmarks
+                // Check if we can detect mouth landmarks
                 guard let landmarks = firstFace.landmarks,
-                      landmarks.outerLips != nil || landmarks.innerLips != nil else {
-                    continuation.resume(returning: .noTeeth)
+                      let outerLips = landmarks.outerLips else {
+                    continuation.resume(returning: .noSmile)
+                    return
+                }
+                
+                // Check if inner lips are detected (indicates mouth is open, showing teeth)
+                guard let innerLips = landmarks.innerLips else {
+                    continuation.resume(returning: .noSmile)
+                    return
+                }
+                
+                // Calculate mouth opening to verify teeth are visible
+                let outerPoints = outerLips.normalizedPoints
+                let innerPoints = innerLips.normalizedPoints
+                
+                guard !outerPoints.isEmpty && !innerPoints.isEmpty else {
+                    continuation.resume(returning: .noSmile)
+                    return
+                }
+                
+                // Find the vertical distance between outer and inner lips
+                // In Vision coordinates, y=0 is at the bottom, so higher y values are higher up
+                let innerTopY = innerPoints.map { CGFloat($0.y) }.max() ?? 0
+                let outerBottomY = outerPoints.map { CGFloat($0.y) }.min() ?? 0
+                
+                // Calculate mouth opening height (normalized to face size)
+                let mouthOpening = innerTopY - outerBottomY
+                
+                // If mouth opening is too small, teeth are likely not visible
+                // Threshold: mouth should be open at least 1.5% of face height
+                let minMouthOpening: CGFloat = 0.015
+                if mouthOpening < minMouthOpening {
+                    continuation.resume(returning: .noSmile)
+                    return
+                }
+                
+                // Additional check: verify mouth shape indicates a smile
+                // In a smile, the mouth opening should be wider and the corners should be raised
+                // Get left and right corners of outer lips
+                let outerXCoords = outerPoints.map { CGFloat($0.x) }
+                guard let leftCornerX = outerXCoords.min(),
+                      let rightCornerX = outerXCoords.max() else {
+                    continuation.resume(returning: .noSmile)
+                    return
+                }
+                
+                // Calculate mouth width (normalized)
+                let mouthWidth = rightCornerX - leftCornerX
+                
+                // Find Y coordinates at the corners
+                let leftCornerPoints = outerPoints.filter { abs(CGFloat($0.x) - leftCornerX) < 0.05 }
+                let rightCornerPoints = outerPoints.filter { abs(CGFloat($0.x) - rightCornerX) < 0.05 }
+                
+                guard !leftCornerPoints.isEmpty && !rightCornerPoints.isEmpty else {
+                    continuation.resume(returning: .noSmile)
+                    return
+                }
+                
+                let leftCornerY = leftCornerPoints.map { CGFloat($0.y) }.reduce(0, +) / CGFloat(leftCornerPoints.count)
+                let rightCornerY = rightCornerPoints.map { CGFloat($0.y) }.reduce(0, +) / CGFloat(rightCornerPoints.count)
+                
+                // Find the lowest point of the outer lips (typically the center bottom)
+                let lowestY = outerPoints.map { CGFloat($0.y) }.min() ?? 0
+                
+                // In Vision coordinates (bottom-left origin), higher y = higher up on face
+                // For a smile, corners should be higher (raised) compared to the lowest point
+                // We check if corners are significantly above the lowest point
+                let cornerRaiseThreshold: CGFloat = 0.02 // 2% of face height
+                let leftCornerRaised = leftCornerY > lowestY + cornerRaiseThreshold
+                let rightCornerRaised = rightCornerY > lowestY + cornerRaiseThreshold
+                
+                // At least one corner should be raised, and mouth should be reasonably wide
+                let minMouthWidth: CGFloat = 0.15 // At least 15% of face width
+                if (!leftCornerRaised && !rightCornerRaised) || mouthWidth < minMouthWidth {
+                    continuation.resume(returning: .noSmile)
                     return
                 }
                 
