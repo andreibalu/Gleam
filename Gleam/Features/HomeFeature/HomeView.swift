@@ -9,6 +9,7 @@ struct HomeView: View {
     @Environment(\.scanRepository) private var scanRepository
     @EnvironmentObject private var scanSession: ScanSession
     @EnvironmentObject private var historyStore: HistoryStore
+    @EnvironmentObject private var achievementManager: AchievementManager
     @AppStorage("userFirstName") private var userFirstName: String = "Andrei"
     @AppStorage("planDisplayMode") private var planDisplayModeRawValue: String = PlanDisplayMode.personalized.rawValue
     @State private var lastResult: ScanResult?
@@ -16,6 +17,7 @@ struct HomeView: View {
     @State private var showPlanSheet = false
     @State private var personalizedPlan: PlanOutcome?
     @State private var hasSyncedCloudState = false
+    @State private var showAchievementsModal = false
 
     private let shadeStages = ShadeStage.defaults
     private let defaultPlan = Recommendations(
@@ -122,7 +124,9 @@ struct HomeView: View {
                     LatestInsightsCard(result: result)
                 }
 
-                AchievementsSection(achievements: achievements)
+                AchievementsTrayView {
+                    showAchievementsModal = true
+                }
 
                 LearnAndImproveSection(cards: learnCards)
             }
@@ -159,6 +163,20 @@ struct HomeView: View {
             )
             .presentationDetents([.medium, .large])
         }
+        .sheet(isPresented: $showAchievementsModal) {
+            AchievementsCollectionModal()
+                .environmentObject(achievementManager)
+        }
+        .overlay(alignment: .center) {
+            if let celebration = achievementManager.activeCelebration {
+                BadgeUnlockCelebrationView(celebration: celebration) {
+                    achievementManager.dismissCelebration(celebration)
+                }
+                .transition(.scale.combined(with: .opacity))
+                .zIndex(1)
+            }
+        }
+        .animation(.spring(response: 0.6, dampingFraction: 0.85), value: achievementManager.activeCelebration?.id)
         .task {
             await loadInitialData()
         }
@@ -314,17 +332,6 @@ struct HomeView: View {
         } else {
             return "Take your first scan today and start your streak ✨"
         }
-    }
-
-    private var achievements: [Achievement] {
-        [
-            Achievement(emoji: "🔥", title: "1-Day Streak", isUnlocked: historyStore.currentStreak >= 1),
-            Achievement(emoji: "🦷", title: "First Scan", isUnlocked: lastResult != nil),
-            Achievement(emoji: "🌈", title: "Color Upgrade", isUnlocked: (displayScore ?? 0) >= 6.0),
-            Achievement(emoji: "📈", title: "Consistency Rise", isUnlocked: historyStore.items.count >= 3),
-            Achievement(emoji: "👑", title: "Consistency King", isUnlocked: historyStore.bestStreak >= 7),
-            Achievement(emoji: "🍯", title: "Self-Care Pro", isUnlocked: historyStore.items.count >= 5)
-        ]
     }
 
     private var learnCards: [LearnCard] {
@@ -798,55 +805,371 @@ private struct LatestInsightsCard: View {
 
 // MARK: - Achievements
 
-private struct AchievementsSection: View {
-    let achievements: [Achievement]
+private struct AchievementsTrayView: View {
+    @EnvironmentObject private var achievementManager: AchievementManager
+    let onTap: () -> Void
+
+    private var unlocked: [AchievementSnapshot] {
+        achievementManager.unlockedSnapshots
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.m) {
-            Text("Smile Achievements")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: AppSpacing.s) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Smile Achievements")
+                        .font(.headline)
+                    Text(unlocked.isEmpty ? "Unlock your first badge to reveal it here." : "Tap to see your full trophy case.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button {
+                    onTap()
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("View all")
+                        Image(systemName: "chevron.right")
+                    }
+                    .font(.subheadline.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+            }
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: AppSpacing.m) {
-                    ForEach(achievements) { achievement in
-                        AchievementBadge(achievement: achievement)
+                    if unlocked.isEmpty {
+                        LockedBadgePlaceholder()
+                    } else {
+                        ForEach(unlocked) { snapshot in
+                            UnlockedAchievementBadge(snapshot: snapshot)
+                        }
                     }
                 }
+                .padding(.vertical, AppSpacing.xs)
             }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                .fill(AppColors.card)
+                .shadow(color: Color.black.opacity(0.05), radius: 14, x: 0, y: 8)
+        )
+        .onTapGesture {
+            onTap()
+        }
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
+private struct LockedBadgePlaceholder: View {
+    var body: some View {
+        VStack(spacing: AppSpacing.s) {
+            ZStack {
+                Circle()
+                    .fill(Color.primary.opacity(0.05))
+                    .frame(width: 72, height: 72)
+                Image(systemName: "lock.fill")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            Text("No badges yet")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(AppSpacing.s)
+        .frame(width: 110)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                .fill(Color.primary.opacity(0.03))
+        )
+    }
+}
+
+private struct UnlockedAchievementBadge: View {
+    let snapshot: AchievementSnapshot
+
+    private var gradient: LinearGradient {
+        let colors = snapshot.definition.id.badgeGradient
+        return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
+    var body: some View {
+        VStack(spacing: AppSpacing.xs) {
+            ZStack {
+                Circle()
+                    .fill(gradient)
+                    .frame(width: 74, height: 74)
+                    .shadow(color: gradient.colors.last?.opacity(0.35) ?? .blue.opacity(0.3), radius: 10, x: 0, y: 8)
+                Image(systemName: snapshot.definition.icon)
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+
+            Text(snapshot.definition.title)
+                .font(.caption.weight(.semibold))
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+            Text(snapshot.tier.label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(AppSpacing.s)
+        .frame(width: 120)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                .fill(AppColors.card)
+                .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 6)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        )
+    }
+}
+
+private struct AchievementsCollectionModal: View {
+    @EnvironmentObject private var achievementManager: AchievementManager
+    @Environment(\.dismiss) private var dismiss
+
+    private let columns = [
+        GridItem(.flexible(), spacing: AppSpacing.m),
+        GridItem(.flexible(), spacing: AppSpacing.m)
+    ]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: AppSpacing.l) {
+                    ForEach(achievementManager.snapshots) { snapshot in
+                        AchievementGridCard(snapshot: snapshot)
+                    }
+                }
+                .padding()
+            }
+            .navigationTitle("Achievements")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .font(.headline)
+                }
+            }
+        }
+        .presentationDetents([.large])
+    }
+}
+
+private struct AchievementGridCard: View {
+    let snapshot: AchievementSnapshot
+
+    private var tint: Color {
+        snapshot.definition.id.badgeGradient.first ?? .accentColor
+    }
+
+    var body: some View {
+        VStack(spacing: AppSpacing.s) {
+            ZStack {
+                Circle()
+                    .stroke(tint.opacity(0.12), lineWidth: 12)
+                Circle()
+                    .trim(from: 0, to: snapshot.progressFraction)
+                    .stroke(
+                        tint,
+                        style: StrokeStyle(lineWidth: 12, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+                    .animation(.spring(response: 0.8, dampingFraction: 0.85), value: snapshot.progressFraction)
+
+                Image(systemName: snapshot.definition.icon)
+                    .font(.system(size: 30, weight: .bold))
+                    .foregroundStyle(snapshot.isUnlocked ? .white : Color.primary.opacity(0.35))
+                    .padding(26)
+                    .background(
+                        Circle()
+                            .fill(snapshot.isUnlocked ? tint : Color.primary.opacity(0.05))
+                    )
+                    .scaleEffect(snapshot.isUnlocked ? 1.05 : 0.95)
+            }
+            .frame(width: 140, height: 140)
+
+            VStack(spacing: 4) {
+                Text(snapshot.definition.title)
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+                Text(snapshot.isUnlocked ? snapshot.tier.label : snapshot.progressLabel)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            if let nextTier = snapshot.nextTierLabel {
+                Text(snapshot.isUnlocked ? "Next: \(nextTier)" : "Goal: \(nextTier)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary.opacity(0.9))
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                .fill(AppColors.card)
+                .shadow(color: Color.black.opacity(0.12), radius: 18, x: 0, y: 12)
+        )
+    }
+}
+
+private struct BadgeUnlockCelebrationView: View {
+    let celebration: AchievementCelebration
+    let onDismiss: () -> Void
+
+    @State private var animatePulse = false
+    @State private var emitConfetti = false
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.45)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    dismiss()
+                }
+
+            VStack(spacing: AppSpacing.m) {
+                Text("Badge unlocked")
+                    .font(.title2.weight(.bold))
+                Text(celebration.title)
+                    .font(.headline)
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(colors: celebration.achievementId.badgeGradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 140, height: 140)
+                        .shadow(color: Color.black.opacity(0.2), radius: 20, x: 0, y: 14)
+                        .scaleEffect(animatePulse ? 1 : 0.7)
+                        .animation(.spring(response: 0.55, dampingFraction: 0.75), value: animatePulse)
+                    Image(systemName: celebration.icon)
+                        .font(.system(size: 44, weight: .bold))
+                        .foregroundStyle(.white)
+                        .scaleEffect(animatePulse ? 1.05 : 0.8)
+                        .animation(.spring(response: 0.5, dampingFraction: 0.7), value: animatePulse)
+                }
+
+                Text(celebration.detail)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Keep gleaming")
+                        .font(.headline)
+                        .padding(.horizontal, 32)
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(FloatingPrimaryButtonStyle())
+            }
+            .padding(AppSpacing.l)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .padding(.horizontal, AppSpacing.l)
+
+            ConfettiLayerView(isEmitting: $emitConfetti)
+                .allowsHitTesting(false)
+        }
+        .onAppear {
+            guard !animatePulse else { return }
+            animatePulse = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                emitConfetti = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) {
+                dismiss()
+            }
+        }
+    }
+
+    private func dismiss() {
+        emitConfetti = false
+        onDismiss()
+    }
+}
+
+private struct ConfettiLayerView: View {
+    @Binding var isEmitting: Bool
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                ForEach(0..<20, id: \.self) { index in
+                    ConfettiPiece(
+                        seed: index,
+                        canvasSize: geometry.size,
+                        isEmitting: $isEmitting
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
 
-private struct AchievementBadge: View {
-    let achievement: Achievement
+private struct ConfettiPiece: View {
+    let seed: Int
+    let canvasSize: CGSize
+    @Binding var isEmitting: Bool
+
+    private var colors: [Color] {
+        [
+            Color(red: 0.99, green: 0.73, blue: 0.38),
+            Color(red: 0.74, green: 0.67, blue: 1.0),
+            Color(red: 0.58, green: 0.87, blue: 0.96),
+            Color(red: 0.95, green: 0.56, blue: 0.74),
+            Color(red: 0.64, green: 0.85, blue: 0.52)
+        ]
+    }
+
+    private var offset: CGSize {
+        let width = canvasSize.width * 0.8
+        let height = canvasSize.height * 0.6
+        let normalized = CGFloat((seed * 73) % 100) / 100.0
+        let x = (normalized - 0.5) * width
+        let y = height + CGFloat(seed % 4) * 20
+        return CGSize(width: x, height: y)
+    }
+
+    private var rotation: Double {
+        Double((seed * 137) % 360)
+    }
 
     var body: some View {
-        VStack(spacing: AppSpacing.s) {
-            Text(achievement.emoji)
-                .font(.title2)
-                .padding(12)
-                .background(
-                    Circle()
-                        .fill(Color.white.opacity(achievement.isUnlocked ? 0.9 : 0.4))
-                )
+        RoundedRectangle(cornerRadius: 2, style: .continuous)
+            .fill(colors[seed % colors.count])
+            .frame(width: 6, height: 12)
+            .rotationEffect(.degrees(isEmitting ? rotation : 0))
+            .offset(x: isEmitting ? offset.width : 0, y: isEmitting ? offset.height : 0)
+            .opacity(isEmitting ? 0 : 1)
+            .animation(.easeOut(duration: 1.3).delay(Double(seed) * 0.02), value: isEmitting)
+    }
+}
 
-            Text(achievement.title)
-                .font(.caption)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.primary)
+private extension AchievementID {
+    var badgeGradient: [Color] {
+        switch self {
+        case .streakLegend:
+            return [Color(red: 0.99, green: 0.69, blue: 0.42), Color(red: 0.97, green: 0.38, blue: 0.41)]
+        case .glowScore:
+            return [Color(red: 0.64, green: 0.56, blue: 0.99), Color(red: 0.33, green: 0.41, blue: 0.94)]
+        case .scanCollector:
+            return [Color(red: 0.43, green: 0.84, blue: 0.99), Color(red: 0.15, green: 0.63, blue: 0.90)]
+        case .stainStrategist:
+            return [Color(red: 0.44, green: 0.89, blue: 0.76), Color(red: 0.19, green: 0.65, blue: 0.55)]
         }
-        .padding(AppSpacing.s)
-        .frame(width: 96)
-        .background(
-            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                .fill(AppColors.card)
-                .shadow(color: Color.black.opacity(achievement.isUnlocked ? 0.08 : 0.02), radius: 8, x: 0, y: 4)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                .stroke(Color.white.opacity(0.2), lineWidth: 1)
-        )
-        .opacity(achievement.isUnlocked ? 1.0 : 0.45)
     }
 }
 
