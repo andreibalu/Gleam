@@ -11,6 +11,7 @@ struct ScanView: View {
     @State private var selectedImageData: Data? = nil
     @State private var isAnalyzing = false
     @State private var showCamera = false
+    @State private var showLivePreview = false
     @State private var errorMessage: String? = nil
     @State private var showErrorAlert = false
     private let stainTags = StainTag.defaults
@@ -63,8 +64,7 @@ struct ScanView: View {
                         if isAnalyzing {
                             // Hide actions during analysis
                             EmptyView()
-                        } else {
-                        if selectedImageData == nil {
+                        } else if selectedImageData == nil {
                             // Initial state: Take photo or choose from library
                             VStack(spacing: AppSpacing.s) {
                                 Button {
@@ -83,7 +83,23 @@ struct ScanView: View {
                                 }
                                 .buttonStyle(FloatingPrimaryButtonStyle())
                                 .accessibilityIdentifier("scan_take_photo_button")
-
+                                
+                                Button {
+                                    showLivePreview = true
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "face.smiling")
+                                            .font(.title3)
+                                            .fontWeight(.semibold)
+                                        Text("Live Smile Preview")
+                                            .font(.headline)
+                                            .fontWeight(.semibold)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 18)
+                                }
+                                .buttonStyle(FloatingSecondaryButtonStyle())
+                                
                                 PhotosPicker(selection: $photoItem, matching: .images) {
                                     HStack(spacing: 12) {
                                         Image(systemName: "photo.on.rectangle")
@@ -123,7 +139,7 @@ struct ScanView: View {
                                         }
                                         .buttonStyle(FloatingIconButtonStyle())
                                         .accessibilityIdentifier("scan_take_new_photo_button")
-
+                                        
                                         PhotosPicker(selection: $photoItem, matching: .images) {
                                             VStack(spacing: 6) {
                                                 Image(systemName: "photo.on.rectangle")
@@ -167,7 +183,6 @@ struct ScanView: View {
                                 .disabled(isAnalyzing)
                                 .opacity(isAnalyzing ? 0.7 : 1.0)
                             }
-                            }
                         }
                     }
                     .padding(.horizontal, AppSpacing.l)
@@ -196,6 +211,20 @@ struct ScanView: View {
                     selectedTagIDs.removeAll()
                 }
                 showCamera = false
+            }
+            .ignoresSafeArea()
+        }
+        .fullScreenCover(isPresented: $showLivePreview) {
+            LiveSmilePreviewView { data in
+                if let data {
+                    selectedImageData = data
+                    selectedTagIDs.removeAll()
+                }
+            } onClose: { action in
+                showLivePreview = false
+                if action == .fallbackToClassicCamera {
+                    showCamera = true
+                }
             }
             .ignoresSafeArea()
         }
