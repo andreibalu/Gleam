@@ -11,6 +11,8 @@ struct ScanView: View {
     @State private var selectedImageData: Data? = nil
     @State private var isAnalyzing = false
     @State private var showCamera = false
+    @State private var errorMessage: String? = nil
+    @State private var showErrorAlert = false
     private let stainTags = StainTag.defaults
     @State private var selectedTagIDs: Set<String> = []
 
@@ -203,6 +205,15 @@ struct ScanView: View {
                 scanSession.shouldOpenCamera = false
             }
         }
+        .alert("Photo Validation", isPresented: $showErrorAlert) {
+            Button("OK", role: .cancel) {
+                errorMessage = nil
+            }
+        } message: {
+            if let errorMessage = errorMessage {
+                Text(errorMessage)
+            }
+        }
     }
     
     private func loadImage(from item: PhotosPickerItem?) async {
@@ -218,6 +229,22 @@ struct ScanView: View {
     @MainActor
     private func analyze() async {
         guard let data = selectedImageData else { return }
+        
+        // Validate that the image contains a face before proceeding
+        let faceValidation = await validateImageContainsFace(imageData: data)
+        switch faceValidation {
+        case .noFace:
+            errorMessage = "No face detected in this photo. Please take a photo that clearly shows a person's face."
+            showErrorAlert = true
+            return
+        case .noTeeth:
+            errorMessage = "We couldn't detect teeth in this photo. Please make sure your smile is visible and try again."
+            showErrorAlert = true
+            return
+        case .valid:
+            break
+        }
+        
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         isAnalyzing = true
         defer {
@@ -255,6 +282,54 @@ struct ScanView: View {
             )
             onFinished(outcome.result)
         } catch { }
+    }
+    
+    /// Validation result for image face detection
+    private enum FaceValidationResult {
+        case valid
+        case noFace
+        case noTeeth
+    }
+    
+    /// Validates that the image contains a human face and detectable teeth
+    private func validateImageContainsFace(imageData: Data) async -> FaceValidationResult {
+        guard let image = UIImage(data: imageData),
+              let cgImage = image.cgImage else {
+            return .noFace
+        }
+        
+        return await withCheckedContinuation { continuation in
+            let request = VNDetectFaceLandmarksRequest { req, error in
+                if let error = error {
+                    continuation.resume(returning: .noFace)
+                    return
+                }
+                
+                guard let observations = req.results as? [VNFaceObservation],
+                      let firstFace = observations.first else {
+                    continuation.resume(returning: .noFace)
+                    return
+                }
+                
+                // Check if we can detect mouth/teeth landmarks
+                guard let landmarks = firstFace.landmarks,
+                      landmarks.outerLips != nil || landmarks.innerLips != nil else {
+                    continuation.resume(returning: .noTeeth)
+                    return
+                }
+                
+                continuation.resume(returning: .valid)
+            }
+            
+            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    try handler.perform([request])
+                } catch {
+                    continuation.resume(returning: .noFace)
+                }
+            }
+        }
     }
     
     /// Crops the image to the detected teeth/mouth region using Vision framework
