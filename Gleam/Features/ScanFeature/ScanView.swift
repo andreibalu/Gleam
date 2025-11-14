@@ -365,13 +365,13 @@ struct ScanView: View {
                     return
                 }
                 
-                // Find the vertical distance between outer and inner lips
+                // Find the vertical gap between top and bottom of inner lips
                 // In Vision coordinates, y=0 is at the bottom, so higher y values are higher up
                 let innerTopY = innerPoints.map { CGFloat($0.y) }.max() ?? 0
-                let outerBottomY = outerPoints.map { CGFloat($0.y) }.min() ?? 0
+                let innerBottomY = innerPoints.map { CGFloat($0.y) }.min() ?? 0
                 
                 // Calculate mouth opening height (normalized to face size)
-                let mouthOpening = innerTopY - outerBottomY
+                let mouthOpening = innerTopY - innerBottomY
                 
                 // If mouth opening is too small, teeth are likely not visible
                 // Threshold: mouth should be open at least 1.5% of face height
