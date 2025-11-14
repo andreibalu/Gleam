@@ -6,6 +6,7 @@ final class HistoryStore: ObservableObject {
     @Published private(set) var items: [HistoryItem] = []
     @Published private(set) var currentStreak: Int = 0
     @Published private(set) var bestStreak: Int = 0
+    @Published private(set) var metrics: HistoryMetrics = .empty
 
     private let repository: any HistoryRepository
     private let imageStorage = LocalImageStorage()
@@ -36,6 +37,7 @@ final class HistoryStore: ObservableObject {
                let persistentRepository = repository as? PersistentHistoryRepository {
                 await persistentRepository.resetAll()
                 items = []
+                metrics = .empty
                 didResetForUITests = true
             } else {
                 let fetched = try await repository.list()
@@ -145,6 +147,7 @@ final class HistoryStore: ObservableObject {
         guard !items.isEmpty else {
             currentStreak = 0
             bestStreak = 0
+            metrics = .empty
             return
         }
         
@@ -211,5 +214,36 @@ final class HistoryStore: ObservableObject {
         }
         tempBestStreak = max(tempBestStreak, tempCurrentStreak)
         bestStreak = max(tempBestStreak, currentStreak)
+        updateMetrics()
     }
+
+    private func updateMetrics() {
+        let highestScore = items.map(\.result.whitenessScore).max() ?? 0
+        let distinctTags = Set(items.flatMap(\.contextTags))
+        let latestScore = items.first?.result.whitenessScore
+        metrics = HistoryMetrics(
+            totalScans: items.count,
+            highestScore: highestScore,
+            distinctTags: distinctTags,
+            latestScore: latestScore
+        )
+    }
+}
+
+struct HistoryMetrics: Equatable {
+    let totalScans: Int
+    let highestScore: Int
+    let distinctTags: Set<String>
+    let latestScore: Int?
+
+    var distinctTagCount: Int {
+        distinctTags.count
+    }
+
+    static let empty = HistoryMetrics(
+        totalScans: 0,
+        highestScore: 0,
+        distinctTags: [],
+        latestScore: nil
+    )
 }

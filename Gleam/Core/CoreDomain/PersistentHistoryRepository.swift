@@ -2,21 +2,26 @@ import Foundation
 
 actor PersistentHistoryRepository: HistoryRepository {
     private let storageURL: URL
+    private let achievementsURL: URL
     private let fileManager: FileManager
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
     private var storage: [HistoryItem]
+    private var achievementStorage: [AchievementRecord]
 
     init(fileURL: URL? = nil, fileManager: FileManager = .default) {
         let encoder = JSONEncoder()
         let decoder = JSONDecoder()
         let resolvedURL = fileURL ?? Self.resolveDefaultURL(with: fileManager)
+        let achievementsURL = resolvedURL.deletingLastPathComponent().appendingPathComponent("achievements.json")
 
         self.fileManager = fileManager
         self.storageURL = resolvedURL
+        self.achievementsURL = achievementsURL
         self.encoder = encoder
         self.decoder = decoder
         self.storage = Self.loadInitialStorage(from: resolvedURL, decoder: decoder, fileManager: fileManager)
+        self.achievementStorage = Self.loadAchievementStorage(from: achievementsURL, decoder: decoder, fileManager: fileManager)
     }
 
     func list() async throws -> [HistoryItem] {
@@ -40,8 +45,12 @@ actor PersistentHistoryRepository: HistoryRepository {
 
     func resetAll() {
         storage.removeAll()
+        achievementStorage.removeAll()
         if fileManager.fileExists(atPath: storageURL.path) {
             try? fileManager.removeItem(at: storageURL)
+        }
+        if fileManager.fileExists(atPath: achievementsURL.path) {
+            try? fileManager.removeItem(at: achievementsURL)
         }
     }
 
@@ -54,11 +63,30 @@ actor PersistentHistoryRepository: HistoryRepository {
         try data.write(to: storageURL, options: .atomic)
     }
 
+    private func persistAchievements() throws {
+        let directory = achievementsURL.deletingLastPathComponent()
+        if !fileManager.fileExists(atPath: directory.path) {
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true, attributes: nil)
+        }
+        let data = try encoder.encode(achievementStorage)
+        try data.write(to: achievementsURL, options: .atomic)
+    }
+
     private static func loadInitialStorage(from url: URL, decoder: JSONDecoder, fileManager: FileManager) -> [HistoryItem] {
         guard fileManager.fileExists(atPath: url.path) else { return [] }
         do {
             let data = try Data(contentsOf: url)
             return try decoder.decode([HistoryItem].self, from: data)
+        } catch {
+            return []
+        }
+    }
+
+    private static func loadAchievementStorage(from url: URL, decoder: JSONDecoder, fileManager: FileManager) -> [AchievementRecord] {
+        guard fileManager.fileExists(atPath: url.path) else { return [] }
+        do {
+            let data = try Data(contentsOf: url)
+            return try decoder.decode([AchievementRecord].self, from: data)
         } catch {
             return []
         }
@@ -74,5 +102,16 @@ actor PersistentHistoryRepository: HistoryRepository {
             baseDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
         }
         return baseDirectory.appendingPathComponent("history.json", isDirectory: false)
+    }
+}
+
+extension PersistentHistoryRepository: AchievementPersisting {
+    func loadAchievementRecords() async -> [AchievementRecord] {
+        achievementStorage
+    }
+
+    func saveAchievementRecords(_ records: [AchievementRecord]) async {
+        achievementStorage = records
+        try? persistAchievements()
     }
 }
