@@ -11,6 +11,8 @@ struct ScanView: View {
     @State private var selectedImageData: Data? = nil
     @State private var isAnalyzing = false
     @State private var showCamera = false
+    @State private var errorMessage: String? = nil
+    @State private var showErrorAlert = false
     private let stainTags = StainTag.defaults
     @State private var selectedTagIDs: Set<String> = []
 
@@ -203,6 +205,15 @@ struct ScanView: View {
                 scanSession.shouldOpenCamera = false
             }
         }
+        .alert("Photo Validation", isPresented: $showErrorAlert) {
+            Button("OK", role: .cancel) {
+                errorMessage = nil
+            }
+        } message: {
+            if let errorMessage = errorMessage {
+                Text(errorMessage)
+            }
+        }
     }
     
     private func loadImage(from item: PhotosPickerItem?) async {
@@ -218,6 +229,24 @@ struct ScanView: View {
     @MainActor
     private func analyze() async {
         guard let data = selectedImageData else { return }
+        
+        // Validate that the image contains a face before proceeding
+        let faceValidation = await validateImageContainsFace(imageData: data)
+        switch faceValidation {
+        case .noFace:
+            errorMessage = "No face detected in this photo. Please take a photo that clearly shows a person's face."
+            showErrorAlert = true
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
+            return
+        case .noSmile:
+            errorMessage = "Please smile to show your teeth! We need to see your teeth clearly for the analysis."
+            showErrorAlert = true
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
+            return
+        case .valid:
+            break
+        }
+        
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         isAnalyzing = true
         defer {
@@ -237,13 +266,17 @@ struct ScanView: View {
             .map { $0.contextTags }
 
         do {
+            // Crop image to teeth region for API call to save tokens
+            // Keep original image for history display
+            let imageToAnalyze = await cropImageToTeethRegion(imageData: data) ?? data
+            
             let outcome = try await scanRepository.analyze(
-                imageData: data,
+                imageData: imageToAnalyze,
                 tags: tagKeywords,
                 previousTakeaways: Array(previousTakeaways),
                 recentTagHistory: Array(recentTagHistory)
             )
-            // Save result with image data and tag context
+            // Save result with original image data and tag context
             historyStore.append(
                 outcome: outcome,
                 imageData: data,
@@ -251,6 +284,216 @@ struct ScanView: View {
             )
             onFinished(outcome.result)
         } catch { }
+    }
+    
+    /// Validation result for image face detection
+    private enum FaceValidationResult {
+        case valid
+        case noFace
+        case noSmile
+    }
+    
+    /// Validates that the image contains a human face and that the person is smiling/showing teeth
+    private func validateImageContainsFace(imageData: Data) async -> FaceValidationResult {
+        guard let image = UIImage(data: imageData),
+              let cgImage = image.cgImage else {
+            return .noFace
+        }
+        
+        return await withCheckedContinuation { continuation in
+            let request = VNDetectFaceLandmarksRequest { req, error in
+                if let error = error {
+                    continuation.resume(returning: .noFace)
+                    return
+                }
+                
+                // Check if any face is detected
+                guard let observations = req.results as? [VNFaceObservation],
+                      let firstFace = observations.first else {
+                    continuation.resume(returning: .noFace)
+                    return
+                }
+                
+                // Check if we can detect mouth landmarks
+                guard let landmarks = firstFace.landmarks,
+                      let outerLips = landmarks.outerLips else {
+                    continuation.resume(returning: .noSmile)
+                    return
+                }
+                
+                // Check if inner lips are detected (indicates mouth is open, showing teeth)
+                guard let innerLips = landmarks.innerLips else {
+                    continuation.resume(returning: .noSmile)
+                    return
+                }
+                
+                // Calculate mouth opening to verify teeth are visible
+                let outerPoints = outerLips.normalizedPoints
+                let innerPoints = innerLips.normalizedPoints
+                
+                guard !outerPoints.isEmpty && !innerPoints.isEmpty else {
+                    continuation.resume(returning: .noSmile)
+                    return
+                }
+                
+                // Find the vertical distance between outer and inner lips
+                // In Vision coordinates, y=0 is at the bottom, so higher y values are higher up
+                let innerTopY = innerPoints.map { CGFloat($0.y) }.max() ?? 0
+                let outerBottomY = outerPoints.map { CGFloat($0.y) }.min() ?? 0
+                
+                // Calculate mouth opening height (normalized to face size)
+                let mouthOpening = innerTopY - outerBottomY
+                
+                // If mouth opening is too small, teeth are likely not visible
+                // Threshold: mouth should be open at least 1.5% of face height
+                let minMouthOpening: CGFloat = 0.015
+                if mouthOpening < minMouthOpening {
+                    continuation.resume(returning: .noSmile)
+                    return
+                }
+                
+                // Additional check: verify mouth shape indicates a smile
+                // In a smile, the mouth opening should be wider and the corners should be raised
+                // Get left and right corners of outer lips
+                let outerXCoords = outerPoints.map { CGFloat($0.x) }
+                guard let leftCornerX = outerXCoords.min(),
+                      let rightCornerX = outerXCoords.max() else {
+                    continuation.resume(returning: .noSmile)
+                    return
+                }
+                
+                // Calculate mouth width (normalized)
+                let mouthWidth = rightCornerX - leftCornerX
+                
+                // Find Y coordinates at the corners
+                let leftCornerPoints = outerPoints.filter { abs(CGFloat($0.x) - leftCornerX) < 0.05 }
+                let rightCornerPoints = outerPoints.filter { abs(CGFloat($0.x) - rightCornerX) < 0.05 }
+                
+                guard !leftCornerPoints.isEmpty && !rightCornerPoints.isEmpty else {
+                    continuation.resume(returning: .noSmile)
+                    return
+                }
+                
+                let leftCornerY = leftCornerPoints.map { CGFloat($0.y) }.reduce(0, +) / CGFloat(leftCornerPoints.count)
+                let rightCornerY = rightCornerPoints.map { CGFloat($0.y) }.reduce(0, +) / CGFloat(rightCornerPoints.count)
+                
+                // Find the lowest point of the outer lips (typically the center bottom)
+                let lowestY = outerPoints.map { CGFloat($0.y) }.min() ?? 0
+                
+                // In Vision coordinates (bottom-left origin), higher y = higher up on face
+                // For a smile, corners should be higher (raised) compared to the lowest point
+                // We check if corners are significantly above the lowest point
+                let cornerRaiseThreshold: CGFloat = 0.02 // 2% of face height
+                let leftCornerRaised = leftCornerY > lowestY + cornerRaiseThreshold
+                let rightCornerRaised = rightCornerY > lowestY + cornerRaiseThreshold
+                
+                // At least one corner should be raised, and mouth should be reasonably wide
+                let minMouthWidth: CGFloat = 0.15 // At least 15% of face width
+                if (!leftCornerRaised && !rightCornerRaised) || mouthWidth < minMouthWidth {
+                    continuation.resume(returning: .noSmile)
+                    return
+                }
+                
+                continuation.resume(returning: .valid)
+            }
+            
+            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    try handler.perform([request])
+                } catch {
+                    continuation.resume(returning: .noFace)
+                }
+            }
+        }
+    }
+    
+    /// Crops the image to the detected teeth/mouth region using Vision framework
+    /// Returns nil if detection fails, allowing fallback to original image
+    private func cropImageToTeethRegion(imageData: Data) async -> Data? {
+        guard let image = UIImage(data: imageData),
+              let cgImage = image.cgImage else {
+            return nil
+        }
+        
+        return await withCheckedContinuation { continuation in
+            let request = VNDetectFaceLandmarksRequest { req, _ in
+                guard
+                    let obs = (req.results as? [VNFaceObservation])?.first,
+                    let lips = obs.landmarks?.outerLips ?? obs.landmarks?.innerLips
+                else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                
+                // Convert lip points (normalized within face) to normalized in full image (origin bottom-left in Vision)
+                let face = obs.boundingBox
+                let points = lips.normalizedPoints.map { p -> CGPoint in
+                    let xInFace = CGFloat(p.x)
+                    let yInFace = CGFloat(p.y)
+                    let x = face.origin.x + xInFace * face.size.width
+                    let yBL = face.origin.y + yInFace * face.size.height
+                    // Vision uses bottom-left origin, convert to top-left for image cropping
+                    let y = 1.0 - yBL
+                    return CGPoint(x: x, y: y)
+                }
+                
+                guard let first = points.first else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                
+                // Find bounding box of mouth region
+                var minX = first.x, maxX = first.x, minY = first.y, maxY = first.y
+                for pt in points {
+                    minX = min(minX, pt.x)
+                    maxX = max(maxX, pt.x)
+                    minY = min(minY, pt.y)
+                    maxY = max(maxY, pt.y)
+                }
+                
+                // Add padding around the mouth region
+                let pad: CGFloat = 0.15 // 15% padding on all sides
+                let width = maxX - minX
+                let height = maxY - minY
+                let paddedMinX = max(0, minX - width * pad)
+                let paddedMinY = max(0, minY - height * pad)
+                let paddedMaxX = min(1, maxX + width * pad)
+                let paddedMaxY = min(1, maxY + height * pad)
+                
+                // Convert normalized coordinates (top-left origin) to pixel coordinates
+                // CGImage cropping uses top-left origin (standard CoreGraphics coordinate system)
+                let imageWidth = CGFloat(cgImage.width)
+                let imageHeight = CGFloat(cgImage.height)
+                let cropRect = CGRect(
+                    x: paddedMinX * imageWidth,
+                    y: paddedMinY * imageHeight, // Already in top-left origin
+                    width: (paddedMaxX - paddedMinX) * imageWidth,
+                    height: (paddedMaxY - paddedMinY) * imageHeight
+                )
+                
+                // Crop the image
+                guard let croppedCGImage = cgImage.cropping(to: cropRect) else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                
+                let croppedImage = UIImage(cgImage: croppedCGImage, scale: image.scale, orientation: image.imageOrientation)
+                
+                // Compress the cropped image
+                let compressedData = croppedImage.jpegData(compressionQuality: 0.8)
+                continuation.resume(returning: compressedData)
+            }
+            
+            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    try handler.perform([request])
+                } catch {
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
     }
 
     private func compressImageDataIfNeeded(_ data: Data) -> Data? {
