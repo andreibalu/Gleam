@@ -237,13 +237,17 @@ struct ScanView: View {
             .map { $0.contextTags }
 
         do {
+            // Crop image to teeth region for API call to save tokens
+            // Keep original image for history display
+            let imageToAnalyze = await cropImageToTeethRegion(imageData: data) ?? data
+            
             let outcome = try await scanRepository.analyze(
-                imageData: data,
+                imageData: imageToAnalyze,
                 tags: tagKeywords,
                 previousTakeaways: Array(previousTakeaways),
                 recentTagHistory: Array(recentTagHistory)
             )
-            // Save result with image data and tag context
+            // Save result with original image data and tag context
             historyStore.append(
                 outcome: outcome,
                 imageData: data,
@@ -251,6 +255,94 @@ struct ScanView: View {
             )
             onFinished(outcome.result)
         } catch { }
+    }
+    
+    /// Crops the image to the detected teeth/mouth region using Vision framework
+    /// Returns nil if detection fails, allowing fallback to original image
+    private func cropImageToTeethRegion(imageData: Data) async -> Data? {
+        guard let image = UIImage(data: imageData),
+              let cgImage = image.cgImage else {
+            return nil
+        }
+        
+        return await withCheckedContinuation { continuation in
+            let request = VNDetectFaceLandmarksRequest { req, _ in
+                guard
+                    let obs = (req.results as? [VNFaceObservation])?.first,
+                    let lips = obs.landmarks?.outerLips ?? obs.landmarks?.innerLips
+                else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                
+                // Convert lip points (normalized within face) to normalized in full image (origin bottom-left in Vision)
+                let face = obs.boundingBox
+                let points = lips.normalizedPoints.map { p -> CGPoint in
+                    let xInFace = CGFloat(p.x)
+                    let yInFace = CGFloat(p.y)
+                    let x = face.origin.x + xInFace * face.size.width
+                    let yBL = face.origin.y + yInFace * face.size.height
+                    // Vision uses bottom-left origin, convert to top-left for image cropping
+                    let y = 1.0 - yBL
+                    return CGPoint(x: x, y: y)
+                }
+                
+                guard let first = points.first else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                
+                // Find bounding box of mouth region
+                var minX = first.x, maxX = first.x, minY = first.y, maxY = first.y
+                for pt in points {
+                    minX = min(minX, pt.x)
+                    maxX = max(maxX, pt.x)
+                    minY = min(minY, pt.y)
+                    maxY = max(maxY, pt.y)
+                }
+                
+                // Add padding around the mouth region
+                let pad: CGFloat = 0.15 // 15% padding on all sides
+                let width = maxX - minX
+                let height = maxY - minY
+                let paddedMinX = max(0, minX - width * pad)
+                let paddedMinY = max(0, minY - height * pad)
+                let paddedMaxX = min(1, maxX + width * pad)
+                let paddedMaxY = min(1, maxY + height * pad)
+                
+                // Convert normalized coordinates (top-left origin) to pixel coordinates
+                // CGImage cropping uses top-left origin (standard CoreGraphics coordinate system)
+                let imageWidth = CGFloat(cgImage.width)
+                let imageHeight = CGFloat(cgImage.height)
+                let cropRect = CGRect(
+                    x: paddedMinX * imageWidth,
+                    y: paddedMinY * imageHeight, // Already in top-left origin
+                    width: (paddedMaxX - paddedMinX) * imageWidth,
+                    height: (paddedMaxY - paddedMinY) * imageHeight
+                )
+                
+                // Crop the image
+                guard let croppedCGImage = cgImage.cropping(to: cropRect) else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                
+                let croppedImage = UIImage(cgImage: croppedCGImage, scale: image.scale, orientation: image.imageOrientation)
+                
+                // Compress the cropped image
+                let compressedData = croppedImage.jpegData(compressionQuality: 0.8)
+                continuation.resume(returning: compressedData)
+            }
+            
+            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    try handler.perform([request])
+                } catch {
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
     }
 
     private func compressImageDataIfNeeded(_ data: Data) -> Data? {
