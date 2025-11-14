@@ -14,6 +14,7 @@ struct GleamApp: App {
     @StateObject private var scanSession = ScanSession()
     @StateObject private var historyStore: HistoryStore
     @StateObject private var achievementManager: AchievementManager
+    @StateObject private var brushingHabitStore: BrushingHabitStore
     private let authRepository: any AuthRepository
     private let scanRepository: any ScanRepository
 
@@ -42,6 +43,7 @@ struct GleamApp: App {
             persistence: historyRepository,
             authRepository: authRepository
         ))
+        _brushingHabitStore = StateObject(wrappedValue: BrushingHabitStore())
     }
     
     var sharedModelContainer: ModelContainer = {
@@ -65,6 +67,7 @@ struct GleamApp: App {
                 .environmentObject(scanSession)
                 .environmentObject(historyStore)
                 .environmentObject(achievementManager)
+                .environmentObject(brushingHabitStore)
         }
         .modelContainer(sharedModelContainer)
     }
