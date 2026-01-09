@@ -13,6 +13,8 @@ import FirebaseCore
 struct GleamApp: App {
     @StateObject private var scanSession = ScanSession()
     @StateObject private var historyStore: HistoryStore
+    @StateObject private var achievementManager: AchievementManager
+    @StateObject private var brushingHabitStore: BrushingHabitStore
     private let authRepository: any AuthRepository
     private let scanRepository: any ScanRepository
 
@@ -26,7 +28,7 @@ struct GleamApp: App {
             authRepository: authRepository
         )
         self.scanRepository = remoteScanRepository
-        _historyStore = StateObject(wrappedValue: HistoryStore(
+        let store = HistoryStore(
             repository: historyRepository,
             appendHandler: { item in
                 Task { await historyRepository.insert(item) }
@@ -34,7 +36,14 @@ struct GleamApp: App {
             remoteDeletionHandler: { id in
                 try await remoteScanRepository.deleteHistoryItem(id: id)
             }
+        )
+        _historyStore = StateObject(wrappedValue: store)
+        _achievementManager = StateObject(wrappedValue: AchievementManager(
+            historyStore: store,
+            persistence: historyRepository,
+            authRepository: authRepository
         ))
+        _brushingHabitStore = StateObject(wrappedValue: BrushingHabitStore())
     }
     
     var sharedModelContainer: ModelContainer = {
@@ -57,6 +66,8 @@ struct GleamApp: App {
                 .authRepository(authRepository)
                 .environmentObject(scanSession)
                 .environmentObject(historyStore)
+                .environmentObject(achievementManager)
+                .environmentObject(brushingHabitStore)
         }
         .modelContainer(sharedModelContainer)
     }

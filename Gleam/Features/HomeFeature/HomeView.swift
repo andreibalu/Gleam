@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 private enum PlanDisplayMode: String {
     case personalized
@@ -9,6 +10,8 @@ struct HomeView: View {
     @Environment(\.scanRepository) private var scanRepository
     @EnvironmentObject private var scanSession: ScanSession
     @EnvironmentObject private var historyStore: HistoryStore
+    @EnvironmentObject private var achievementManager: AchievementManager
+    @EnvironmentObject private var brushingHabitStore: BrushingHabitStore
     @AppStorage("userFirstName") private var userFirstName: String = "Andrei"
     @AppStorage("planDisplayMode") private var planDisplayModeRawValue: String = PlanDisplayMode.personalized.rawValue
     @State private var lastResult: ScanResult?
@@ -16,6 +19,8 @@ struct HomeView: View {
     @State private var showPlanSheet = false
     @State private var personalizedPlan: PlanOutcome?
     @State private var hasSyncedCloudState = false
+    @State private var showAchievementsModal = false
+    @State private var showHabitSheet = false
 
     private let shadeStages = ShadeStage.defaults
     private let defaultPlan = Recommendations(
@@ -110,6 +115,10 @@ struct HomeView: View {
                     latestResult: lastResult
                 )
 
+                BrushingHabitCard(
+                    onConfigureTap: { showHabitSheet = true }
+                )
+
                 PlanPreviewCard(
                     plan: currentPlan,
                     isPersonalized: isPersonalizedPlanActive,
@@ -122,7 +131,9 @@ struct HomeView: View {
                     LatestInsightsCard(result: result)
                 }
 
-                AchievementsSection(achievements: achievements)
+                AchievementsTrayView {
+                    showAchievementsModal = true
+                }
 
                 LearnAndImproveSection(cards: learnCards)
             }
@@ -159,6 +170,26 @@ struct HomeView: View {
             )
             .presentationDetents([.medium, .large])
         }
+        .sheet(isPresented: $showAchievementsModal) {
+            AchievementsCollectionModal()
+                .environmentObject(achievementManager)
+        }
+        .sheet(isPresented: $showHabitSheet) {
+            BrushingHabitSetupSheet(configuration: brushingHabitStore.configuration) { morning, evening in
+                brushingHabitStore.configure(morning: morning, evening: evening)
+            }
+            .presentationDetents([.medium, .large])
+        }
+        .overlay(alignment: .center) {
+            if let celebration = achievementManager.activeCelebration {
+                BadgeUnlockCelebrationView(celebration: celebration) {
+                    achievementManager.dismissCelebration(celebration)
+                }
+                .transition(.scale.combined(with: .opacity))
+                .zIndex(1)
+            }
+        }
+        .animation(.spring(response: 0.6, dampingFraction: 0.85), value: achievementManager.activeCelebration?.id)
         .task {
             await loadInitialData()
         }
@@ -314,17 +345,6 @@ struct HomeView: View {
         } else {
             return "Take your first scan today and start your streak ✨"
         }
-    }
-
-    private var achievements: [Achievement] {
-        [
-            Achievement(emoji: "🔥", title: "1-Day Streak", isUnlocked: historyStore.currentStreak >= 1),
-            Achievement(emoji: "🦷", title: "First Scan", isUnlocked: lastResult != nil),
-            Achievement(emoji: "🌈", title: "Color Upgrade", isUnlocked: (displayScore ?? 0) >= 6.0),
-            Achievement(emoji: "📈", title: "Consistency Rise", isUnlocked: historyStore.items.count >= 3),
-            Achievement(emoji: "👑", title: "Consistency King", isUnlocked: historyStore.bestStreak >= 7),
-            Achievement(emoji: "🍯", title: "Self-Care Pro", isUnlocked: historyStore.items.count >= 5)
-        ]
     }
 
     private var learnCards: [LearnCard] {
@@ -717,6 +737,479 @@ private struct DailyChallengeCard: View {
     }
 }
 
+// MARK: - Brushing Habit
+
+private struct BrushingHabitCard: View {
+    @EnvironmentObject private var store: BrushingHabitStore
+    let onConfigureTap: () -> Void
+
+    @State private var celebratorySlot: BrushingSlot?
+    @State private var isAnimatingCelebration = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.m) {
+            header
+
+            if store.isConfigured {
+                BrushingOrbitDiagram(
+                    morningState: store.slotState(for: .morning),
+                    eveningState: store.slotState(for: .evening),
+                    record: store.todayRecord,
+                    celebratorySlot: isAnimatingCelebration ? celebratorySlot : nil,
+                    onLongPress: handleLongPress
+                )
+                .frame(height: 220)
+                .animation(.spring(response: 0.6, dampingFraction: 0.85), value: store.todayRecord)
+
+                progressView
+                reminderSummary
+
+                Text("Sun tooth unlocks 5 AM - 3 PM. Moon tooth glows 3 PM - midnight. Long-press to log each brushing.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                setupPrompt
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                .fill(AppColors.card)
+        )
+        .onAppear {
+            store.refreshIfNeeded()
+        }
+        .onChange(of: store.lastCompletionEvent) { _, event in
+            guard let event else { return }
+            celebratorySlot = event.slot
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
+                isAnimatingCelebration = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
+                withAnimation(.easeOut(duration: 0.35)) {
+                    isAnimatingCelebration = false
+                }
+            }
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                Text("Brushing habit")
+                    .font(.headline)
+                Text(streakSubtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button(store.isConfigured ? "Edit" : "Set up") {
+                onConfigureTap()
+            }
+            .font(.subheadline.weight(.semibold))
+        }
+    }
+
+    private var setupPrompt: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.m) {
+            Text("Set up your washing habit")
+                .font(.title3.weight(.semibold))
+            Text("Pick morning and evening reminder times. We'll celebrate every long-press until notifications ship.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Button {
+                onConfigureTap()
+            } label: {
+                Text("Choose reminder times")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+            }
+            .buttonStyle(FloatingPrimaryButtonStyle())
+        }
+    }
+
+    private var progressView: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.xs) {
+            HStack {
+                Text("Today's glow")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text(progressLabel)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            ProgressView(value: store.dailyProgress)
+                .tint(.accentColor)
+        }
+    }
+
+    @ViewBuilder
+    private var reminderSummary: some View {
+        if let configuration = store.configuration {
+            VStack(alignment: .leading, spacing: AppSpacing.s) {
+                reminderRow(
+                    title: "Sunrise brush",
+                    systemImage: "sunrise.fill",
+                    time: configuration.morningReminder.formatted()
+                )
+                reminderRow(
+                    title: "Moonlight brush",
+                    systemImage: "moon.stars.fill",
+                    time: configuration.eveningReminder.formatted()
+                )
+                Text("Notifications go live once our Apple Developer account is active. Until then, we keep your times and haptics ready.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func reminderRow(title: String, systemImage: String, time: String) -> some View {
+        HStack {
+            Label(title, systemImage: systemImage)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+            Spacer()
+            Text(time)
+                .font(.subheadline.weight(.semibold))
+        }
+        .padding(.vertical, AppSpacing.xs)
+    }
+
+    private var progressLabel: String {
+        let completed = (store.todayRecord.morningCompleted ? 1 : 0) + (store.todayRecord.eveningCompleted ? 1 : 0)
+        return "\(completed)/2 complete"
+    }
+
+    private var streakSubtitle: String {
+        if store.currentStreak == 0 {
+            return "Complete both brushes today to start a streak."
+        }
+        if store.bestStreak > store.currentStreak {
+            return "\(store.currentStreak)-day streak • Best \(store.bestStreak)"
+        }
+        return "\(store.currentStreak)-day streak and counting"
+    }
+
+    private func handleLongPress(for slot: BrushingSlot) {
+        let result = store.markBrushed(slot)
+        switch result {
+        case .recorded:
+            BrushingHaptics.celebrate()
+        case .alreadyCompleted:
+            BrushingHaptics.softTap()
+        case .locked:
+            BrushingHaptics.warning()
+        case .notConfigured:
+            onConfigureTap()
+        }
+    }
+}
+
+private struct BrushingOrbitDiagram: View {
+    let morningState: BrushingSlotState
+    let eveningState: BrushingSlotState
+    let record: BrushingDayRecord
+    let celebratorySlot: BrushingSlot?
+    let onLongPress: (BrushingSlot) -> Void
+
+    var body: some View {
+        GeometryReader { geometry in
+            let size = geometry.size
+            let inset = AppSpacing.l
+            let start = CGPoint(x: inset, y: size.height - inset)
+            let end = CGPoint(x: size.width - inset, y: inset)
+            let morningPoint = start.interpolate(to: end, progress: 0.32)
+            let eveningPoint = start.interpolate(to: end, progress: 0.72)
+            let progress = CGFloat(max(0, min(recordProgress, 1)))
+            let progressPoint = start.interpolate(to: end, progress: progress)
+
+            ZStack {
+                Path { path in
+                    path.move(to: start)
+                    path.addLine(to: end)
+                }
+                .stroke(Color.primary.opacity(0.08), style: StrokeStyle(lineWidth: 12, lineCap: .round))
+
+                if progress > 0 {
+                    Path { path in
+                        path.move(to: start)
+                        path.addLine(to: progressPoint)
+                    }
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.accentColor, Color.accentColor.opacity(0.7)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ),
+                        style: StrokeStyle(lineWidth: 12, lineCap: .round)
+                    )
+                }
+
+                Text("☀️")
+                    .font(.system(size: 36))
+                    .position(x: start.x - 6, y: min(size.height, start.y + 8))
+
+                Text("🌙")
+                    .font(.system(size: 36))
+                    .position(x: end.x + 6, y: max(0, end.y - 8))
+
+                ToothButton(
+                    slot: .morning,
+                    state: morningState,
+                    isCelebrating: celebratorySlot == .morning,
+                    onLongPress: { onLongPress(.morning) }
+                )
+                .position(morningPoint)
+
+                ToothButton(
+                    slot: .evening,
+                    state: eveningState,
+                    isCelebrating: celebratorySlot == .evening,
+                    onLongPress: { onLongPress(.evening) }
+                )
+                .position(eveningPoint)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private var recordProgress: Double {
+        let completed = (record.morningCompleted ? 1.0 : 0.0) + (record.eveningCompleted ? 1.0 : 0.0)
+        return completed / 2.0
+    }
+}
+
+private struct ToothButton: View {
+    let slot: BrushingSlot
+    let state: BrushingSlotState
+    let isCelebrating: Bool
+    let onLongPress: () -> Void
+
+    @GestureState private var isPressing = false
+
+    var body: some View {
+        let gesture = LongPressGesture(minimumDuration: 0.6)
+            .updating($isPressing) { value, state, _ in
+                state = value
+            }
+            .onEnded { completed in
+                if completed {
+                    onLongPress()
+                }
+            }
+
+        ZStack {
+            Circle()
+                .fill(backgroundColor)
+                .frame(width: 78, height: 78)
+                .shadow(color: shadowColor, radius: 12, x: 0, y: 10)
+                .overlay(
+                    Circle()
+                        .strokeBorder(borderColor, lineWidth: state == .completed ? 0 : 2)
+                )
+
+            Image(systemName: iconName)
+                .font(.system(size: 32, weight: .semibold))
+                .foregroundStyle(iconColor)
+
+            if isCelebrating {
+                Circle()
+                    .stroke(iconColor.opacity(0.65), lineWidth: 4)
+                    .scaleEffect(1.3)
+                    .opacity(0.8)
+                    .animation(.easeOut(duration: 0.8).repeatCount(1, autoreverses: false), value: isCelebrating)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if state == .locked {
+                Image(systemName: "lock.fill")
+                    .font(.caption.bold())
+                    .padding(6)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .offset(x: 6, y: -6)
+            }
+        }
+        .scaleEffect(scale)
+        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isPressing)
+        .animation(.spring(response: 0.4, dampingFraction: 0.75), value: isCelebrating)
+        .contentShape(Circle())
+        .gesture(state == .available ? gesture : nil)
+        .allowsHitTesting(state == .available)
+        .accessibilityLabel(slot == .morning ? "Morning brushing" : "Night brushing")
+        .accessibilityValue(accessibilityValue)
+        .accessibilityHint("Long press to mark complete")
+    }
+
+    private var backgroundColor: Color {
+        switch state {
+        case .completed:
+            return Color.accentColor
+        case .available:
+            return Color(.systemBackground)
+        case .locked:
+            return Color.primary.opacity(0.08)
+        }
+    }
+
+    private var iconColor: Color {
+        switch state {
+        case .completed:
+            return .white
+        case .available:
+            return .primary
+        case .locked:
+            return .secondary
+        }
+    }
+
+    private var borderColor: Color {
+        switch state {
+        case .available:
+            return Color.primary.opacity(0.08)
+        case .locked:
+            return Color.primary.opacity(0.1)
+        case .completed:
+            return .clear
+        }
+    }
+
+    private var shadowColor: Color {
+        switch state {
+        case .completed:
+            return Color.accentColor.opacity(0.45)
+        case .available:
+            return Color.black.opacity(0.08)
+        case .locked:
+            return Color.black.opacity(0.03)
+        }
+    }
+
+    private var iconName: String {
+        state == .completed ? "checkmark" : "tooth.fill"
+    }
+
+    private var scale: CGFloat {
+        if isPressing {
+            return 1.1
+        }
+        if isCelebrating {
+            return 1.08
+        }
+        return 1.0
+    }
+
+    private var accessibilityValue: String {
+        switch state {
+        case .completed:
+            return "Completed"
+        case .available:
+            return "Ready"
+        case .locked:
+            return "Locked"
+        }
+    }
+}
+
+private struct BrushingHabitSetupSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var morningDate: Date
+    @State private var eveningDate: Date
+    let onSave: (ReminderTime, ReminderTime) -> Void
+    private let calendar = Calendar.current
+
+    init(configuration: BrushingHabitConfiguration?, onSave: @escaping (ReminderTime, ReminderTime) -> Void) {
+        self.onSave = onSave
+        _morningDate = State(initialValue: configuration?.morningReminder.asDate() ?? BrushingHabitSetupSheet.defaultMorningDate)
+        _eveningDate = State(initialValue: configuration?.eveningReminder.asDate() ?? BrushingHabitSetupSheet.defaultEveningDate)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Reminder times") {
+                    DatePicker("Morning brush", selection: $morningDate, displayedComponents: .hourAndMinute)
+                        .datePickerStyle(.wheel)
+                    DatePicker("Evening brush", selection: $eveningDate, displayedComponents: .hourAndMinute)
+                        .datePickerStyle(.wheel)
+                }
+
+                Section {
+                    Text("Notifications ship once our Apple Developer account is active. For now, we store your preferred times and celebrate each long press.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .navigationTitle("Brushing reminders")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        onSave(morningDate.asReminderTime(calendar: calendar), eveningDate.asReminderTime(calendar: calendar))
+                        dismiss()
+                    }
+                    .font(.headline)
+                }
+            }
+        }
+    }
+
+    private static var defaultMorningDate: Date {
+        makeDefaultDate(hour: 7, minute: 0)
+    }
+
+    private static var defaultEveningDate: Date {
+        makeDefaultDate(hour: 21, minute: 30)
+    }
+
+    private static func makeDefaultDate(hour: Int, minute: Int) -> Date {
+        var components = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        components.hour = hour
+        components.minute = minute
+        return Calendar.current.date(from: components) ?? Date()
+    }
+}
+
+private enum BrushingHaptics {
+    static func celebrate() {
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+    }
+
+    static func warning() {
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.warning)
+    }
+
+    static func softTap() {
+        let generator = UIImpactFeedbackGenerator(style: .soft)
+        generator.impactOccurred()
+    }
+}
+
+private extension CGPoint {
+    func interpolate(to end: CGPoint, progress: CGFloat) -> CGPoint {
+        CGPoint(
+            x: x + (end.x - x) * progress,
+            y: y + (end.y - y) * progress
+        )
+    }
+}
+
+private extension Date {
+    func asReminderTime(calendar: Calendar = .current) -> ReminderTime {
+        let components = calendar.dateComponents([.hour, .minute], from: self)
+        return ReminderTime(hour: components.hour ?? 0, minute: components.minute ?? 0)
+    }
+}
+
 // MARK: - Latest Insights
 
 private struct LatestInsightsCard: View {
@@ -798,55 +1291,371 @@ private struct LatestInsightsCard: View {
 
 // MARK: - Achievements
 
-private struct AchievementsSection: View {
-    let achievements: [Achievement]
+private struct AchievementsTrayView: View {
+    @EnvironmentObject private var achievementManager: AchievementManager
+    let onTap: () -> Void
+
+    private var unlocked: [AchievementSnapshot] {
+        achievementManager.unlockedSnapshots
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.m) {
-            Text("Smile Achievements")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: AppSpacing.s) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Smile Achievements")
+                        .font(.headline)
+                    Text(unlocked.isEmpty ? "Unlock your first badge to reveal it here." : "Tap to see your full trophy case.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button {
+                    onTap()
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("View all")
+                        Image(systemName: "chevron.right")
+                    }
+                    .font(.subheadline.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+            }
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: AppSpacing.m) {
-                    ForEach(achievements) { achievement in
-                        AchievementBadge(achievement: achievement)
+                    if unlocked.isEmpty {
+                        LockedBadgePlaceholder()
+                    } else {
+                        ForEach(unlocked) { snapshot in
+                            UnlockedAchievementBadge(snapshot: snapshot)
+                        }
                     }
                 }
+                .padding(.vertical, AppSpacing.xs)
             }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                .fill(AppColors.card)
+                .shadow(color: Color.black.opacity(0.05), radius: 14, x: 0, y: 8)
+        )
+        .onTapGesture {
+            onTap()
+        }
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
+private struct LockedBadgePlaceholder: View {
+    var body: some View {
+        VStack(spacing: AppSpacing.s) {
+            ZStack {
+                Circle()
+                    .fill(Color.primary.opacity(0.05))
+                    .frame(width: 72, height: 72)
+                Image(systemName: "lock.fill")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            Text("No badges yet")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(AppSpacing.s)
+        .frame(width: 110)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                .fill(Color.primary.opacity(0.03))
+        )
+    }
+}
+
+private struct UnlockedAchievementBadge: View {
+    let snapshot: AchievementSnapshot
+
+    private var gradient: LinearGradient {
+        let colors = snapshot.definition.id.badgeGradient
+        return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
+    var body: some View {
+        VStack(spacing: AppSpacing.xs) {
+            ZStack {
+                Circle()
+                    .fill(gradient)
+                    .frame(width: 74, height: 74)
+                    .shadow(color: gradient.colors.last?.opacity(0.35) ?? .blue.opacity(0.3), radius: 10, x: 0, y: 8)
+                Image(systemName: snapshot.definition.icon)
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+
+            Text(snapshot.definition.title)
+                .font(.caption.weight(.semibold))
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+            Text(snapshot.tier.label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(AppSpacing.s)
+        .frame(width: 120)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                .fill(AppColors.card)
+                .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 6)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        )
+    }
+}
+
+private struct AchievementsCollectionModal: View {
+    @EnvironmentObject private var achievementManager: AchievementManager
+    @Environment(\.dismiss) private var dismiss
+
+    private let columns = [
+        GridItem(.flexible(), spacing: AppSpacing.m),
+        GridItem(.flexible(), spacing: AppSpacing.m)
+    ]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: AppSpacing.l) {
+                    ForEach(achievementManager.snapshots) { snapshot in
+                        AchievementGridCard(snapshot: snapshot)
+                    }
+                }
+                .padding()
+            }
+            .navigationTitle("Achievements")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .font(.headline)
+                }
+            }
+        }
+        .presentationDetents([.large])
+    }
+}
+
+private struct AchievementGridCard: View {
+    let snapshot: AchievementSnapshot
+
+    private var tint: Color {
+        snapshot.definition.id.badgeGradient.first ?? .accentColor
+    }
+
+    var body: some View {
+        VStack(spacing: AppSpacing.s) {
+            ZStack {
+                Circle()
+                    .stroke(tint.opacity(0.12), lineWidth: 12)
+                Circle()
+                    .trim(from: 0, to: snapshot.progressFraction)
+                    .stroke(
+                        tint,
+                        style: StrokeStyle(lineWidth: 12, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+                    .animation(.spring(response: 0.8, dampingFraction: 0.85), value: snapshot.progressFraction)
+
+                Image(systemName: snapshot.definition.icon)
+                    .font(.system(size: 30, weight: .bold))
+                    .foregroundStyle(snapshot.isUnlocked ? .white : Color.primary.opacity(0.35))
+                    .padding(26)
+                    .background(
+                        Circle()
+                            .fill(snapshot.isUnlocked ? tint : Color.primary.opacity(0.05))
+                    )
+                    .scaleEffect(snapshot.isUnlocked ? 1.05 : 0.95)
+            }
+            .frame(width: 140, height: 140)
+
+            VStack(spacing: 4) {
+                Text(snapshot.definition.title)
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+                Text(snapshot.isUnlocked ? snapshot.tier.label : snapshot.progressLabel)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            if let nextTier = snapshot.nextTierLabel {
+                Text(snapshot.isUnlocked ? "Next: \(nextTier)" : "Goal: \(nextTier)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary.opacity(0.9))
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                .fill(AppColors.card)
+                .shadow(color: Color.black.opacity(0.12), radius: 18, x: 0, y: 12)
+        )
+    }
+}
+
+private struct BadgeUnlockCelebrationView: View {
+    let celebration: AchievementCelebration
+    let onDismiss: () -> Void
+
+    @State private var animatePulse = false
+    @State private var emitConfetti = false
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.45)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    dismiss()
+                }
+
+            VStack(spacing: AppSpacing.m) {
+                Text("Badge unlocked")
+                    .font(.title2.weight(.bold))
+                Text(celebration.title)
+                    .font(.headline)
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(colors: celebration.achievementId.badgeGradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 140, height: 140)
+                        .shadow(color: Color.black.opacity(0.2), radius: 20, x: 0, y: 14)
+                        .scaleEffect(animatePulse ? 1 : 0.7)
+                        .animation(.spring(response: 0.55, dampingFraction: 0.75), value: animatePulse)
+                    Image(systemName: celebration.icon)
+                        .font(.system(size: 44, weight: .bold))
+                        .foregroundStyle(.white)
+                        .scaleEffect(animatePulse ? 1.05 : 0.8)
+                        .animation(.spring(response: 0.5, dampingFraction: 0.7), value: animatePulse)
+                }
+
+                Text(celebration.detail)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Keep gleaming")
+                        .font(.headline)
+                        .padding(.horizontal, 32)
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(FloatingPrimaryButtonStyle())
+            }
+            .padding(AppSpacing.l)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .padding(.horizontal, AppSpacing.l)
+
+            ConfettiLayerView(isEmitting: $emitConfetti)
+                .allowsHitTesting(false)
+        }
+        .onAppear {
+            guard !animatePulse else { return }
+            animatePulse = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                emitConfetti = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) {
+                dismiss()
+            }
+        }
+    }
+
+    private func dismiss() {
+        emitConfetti = false
+        onDismiss()
+    }
+}
+
+private struct ConfettiLayerView: View {
+    @Binding var isEmitting: Bool
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                ForEach(0..<20, id: \.self) { index in
+                    ConfettiPiece(
+                        seed: index,
+                        canvasSize: geometry.size,
+                        isEmitting: $isEmitting
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
 
-private struct AchievementBadge: View {
-    let achievement: Achievement
+private struct ConfettiPiece: View {
+    let seed: Int
+    let canvasSize: CGSize
+    @Binding var isEmitting: Bool
+
+    private var colors: [Color] {
+        [
+            Color(red: 0.99, green: 0.73, blue: 0.38),
+            Color(red: 0.74, green: 0.67, blue: 1.0),
+            Color(red: 0.58, green: 0.87, blue: 0.96),
+            Color(red: 0.95, green: 0.56, blue: 0.74),
+            Color(red: 0.64, green: 0.85, blue: 0.52)
+        ]
+    }
+
+    private var offset: CGSize {
+        let width = canvasSize.width * 0.8
+        let height = canvasSize.height * 0.6
+        let normalized = CGFloat((seed * 73) % 100) / 100.0
+        let x = (normalized - 0.5) * width
+        let y = height + CGFloat(seed % 4) * 20
+        return CGSize(width: x, height: y)
+    }
+
+    private var rotation: Double {
+        Double((seed * 137) % 360)
+    }
 
     var body: some View {
-        VStack(spacing: AppSpacing.s) {
-            Text(achievement.emoji)
-                .font(.title2)
-                .padding(12)
-                .background(
-                    Circle()
-                        .fill(Color.white.opacity(achievement.isUnlocked ? 0.9 : 0.4))
-                )
+        RoundedRectangle(cornerRadius: 2, style: .continuous)
+            .fill(colors[seed % colors.count])
+            .frame(width: 6, height: 12)
+            .rotationEffect(.degrees(isEmitting ? rotation : 0))
+            .offset(x: isEmitting ? offset.width : 0, y: isEmitting ? offset.height : 0)
+            .opacity(isEmitting ? 0 : 1)
+            .animation(.easeOut(duration: 1.3).delay(Double(seed) * 0.02), value: isEmitting)
+    }
+}
 
-            Text(achievement.title)
-                .font(.caption)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.primary)
+private extension AchievementID {
+    var badgeGradient: [Color] {
+        switch self {
+        case .streakLegend:
+            return [Color(red: 0.99, green: 0.69, blue: 0.42), Color(red: 0.97, green: 0.38, blue: 0.41)]
+        case .glowScore:
+            return [Color(red: 0.64, green: 0.56, blue: 0.99), Color(red: 0.33, green: 0.41, blue: 0.94)]
+        case .scanCollector:
+            return [Color(red: 0.43, green: 0.84, blue: 0.99), Color(red: 0.15, green: 0.63, blue: 0.90)]
+        case .stainStrategist:
+            return [Color(red: 0.44, green: 0.89, blue: 0.76), Color(red: 0.19, green: 0.65, blue: 0.55)]
         }
-        .padding(AppSpacing.s)
-        .frame(width: 96)
-        .background(
-            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                .fill(AppColors.card)
-                .shadow(color: Color.black.opacity(achievement.isUnlocked ? 0.08 : 0.02), radius: 8, x: 0, y: 4)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                .stroke(Color.white.opacity(0.2), lineWidth: 1)
-        )
-        .opacity(achievement.isUnlocked ? 1.0 : 0.45)
     }
 }
 
