@@ -13,8 +13,8 @@ struct SettingsView: View {
                 }
             }
             Section(header: Text("Privacy")) {
-                Link("Privacy Policy", destination: URL(string: "https://example.com/privacy")!)
-                Link("Terms of Service", destination: URL(string: "https://example.com/terms")!)
+                Link("Privacy Policy", destination: URL(string: "https://gen-lang-client-0740636332.web.app/privacy.html")!)
+                Link("Terms of Service", destination: URL(string: "https://gen-lang-client-0740636332.web.app/terms.html")!)
             }
             Section(header: Text("Onboarding")) {
                 Button(role: .destructive) {

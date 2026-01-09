@@ -76,4 +76,11 @@ APP_STORE_CHECKLIST.md
 **/GoogleService-Info.plist
 GoogleService-Info.plist
 
+# Firebase Cache and Deployment Files
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+ui-debug.log
+.firebaserc
+
 
