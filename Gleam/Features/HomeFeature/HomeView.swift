@@ -1376,9 +1376,12 @@ private struct LockedBadgePlaceholder: View {
 private struct UnlockedAchievementBadge: View {
     let snapshot: AchievementSnapshot
 
+    private var gradientColors: [Color] {
+        snapshot.definition.id.badgeGradient
+    }
+    
     private var gradient: LinearGradient {
-        let colors = snapshot.definition.id.badgeGradient
-        return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+        LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
     var body: some View {
@@ -1387,7 +1390,7 @@ private struct UnlockedAchievementBadge: View {
                 Circle()
                     .fill(gradient)
                     .frame(width: 74, height: 74)
-                    .shadow(color: gradient.colors.last?.opacity(0.35) ?? .blue.opacity(0.3), radius: 10, x: 0, y: 8)
+                    .shadow(color: gradientColors.last?.opacity(0.35) ?? .blue.opacity(0.3), radius: 10, x: 0, y: 8)
                 Image(systemName: snapshot.definition.icon)
                     .font(.system(size: 28, weight: .semibold))
                     .foregroundStyle(.white)
