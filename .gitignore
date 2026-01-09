@@ -70,6 +70,7 @@ Artifacts/
 # Documentation (maintained locally)
 README.md
 TODO.md
+APP_STORE_CHECKLIST.md
 
 # Firebase Configuration (sensitive)
 **/GoogleService-Info.plist
