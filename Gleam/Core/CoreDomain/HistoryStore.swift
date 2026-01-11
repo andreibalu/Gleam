@@ -142,7 +142,17 @@ final class HistoryStore: ObservableObject {
     func loadImage(for historyItemId: String) async -> Data? {
         await imageStorage.loadImage(for: historyItemId)
     }
-    
+
+    func clearAll() async {
+        items.removeAll()
+        currentStreak = 0
+        bestStreak = 0
+        metrics = .empty
+        if let persistent = repository as? PersistentHistoryRepository {
+            await persistent.resetAll()
+        }
+    }
+
     private func calculateStreaks() {
         guard !items.isEmpty else {
             currentStreak = 0

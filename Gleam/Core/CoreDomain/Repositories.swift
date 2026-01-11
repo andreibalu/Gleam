@@ -23,6 +23,8 @@ protocol AuthRepository {
     func currentUserId() async -> String?
     func authToken() async throws -> String?
     func signInWithGoogle(presentingController: UIViewController) async throws
+    func signOut() throws
+    func deleteAccount() async throws
 }
 
 

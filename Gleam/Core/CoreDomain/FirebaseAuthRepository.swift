@@ -6,6 +6,7 @@ import UIKit
 enum FirebaseAuthRepositoryError: LocalizedError {
     case missingClientID
     case missingIDToken
+    case noCurrentUser
 
     var errorDescription: String? {
         switch self {
@@ -13,6 +14,8 @@ enum FirebaseAuthRepositoryError: LocalizedError {
             return "Missing Google client configuration."
         case .missingIDToken:
             return "Unable to retrieve Google ID token."
+        case .noCurrentUser:
+            return "No user is currently signed in."
         }
     }
 }
@@ -70,5 +73,18 @@ final class FirebaseAuthRepository: AuthRepository {
                 }
             }
         }
+    }
+
+    func signOut() throws {
+        GIDSignIn.sharedInstance.signOut()
+        try auth.signOut()
+    }
+
+    func deleteAccount() async throws {
+        guard let user = auth.currentUser else {
+            throw FirebaseAuthRepositoryError.noCurrentUser
+        }
+        GIDSignIn.sharedInstance.signOut()
+        try await user.delete()
     }
 }
