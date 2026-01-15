@@ -5,6 +5,7 @@ import Vision
 
 struct ScanView: View {
     @Environment(\.scanRepository) private var scanRepository
+    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var scanSession: ScanSession
     @EnvironmentObject private var historyStore: HistoryStore
     @State private var photoItem: PhotosPickerItem? = nil
@@ -18,18 +19,27 @@ struct ScanView: View {
 
     var onFinished: (ScanResult) -> Void
 
+    private var backgroundGradient: LinearGradient {
+        let lightColors = [
+            Color(red: 0.95, green: 0.97, blue: 1.0),
+            Color(red: 0.98, green: 0.95, blue: 1.0)
+        ]
+        let darkColors = [
+            Color(red: 0.06, green: 0.07, blue: 0.11),
+            Color(red: 0.11, green: 0.09, blue: 0.16)
+        ]
+        return LinearGradient(
+            colors: colorScheme == .dark ? darkColors : lightColors,
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
     var body: some View {
         GeometryReader { geometry in
             ZStack {
                 // Background gradient
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.95, green: 0.97, blue: 1.0),
-                        Color(red: 0.98, green: 0.95, blue: 1.0)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                backgroundGradient
                 .ignoresSafeArea()
                 
                 VStack(spacing: 0) {
@@ -510,6 +520,40 @@ struct ScanView: View {
 
 // MARK: - Scan Placeholder View
 private struct ScanPlaceholderView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var isDarkMode: Bool {
+        colorScheme == .dark
+    }
+
+    private var backgroundGradient: LinearGradient {
+        let lightColors = [
+            Color(red: 0.93, green: 0.95, blue: 0.98),
+            Color(red: 0.96, green: 0.94, blue: 0.98)
+        ]
+        let darkColors = [
+            Color(red: 0.08, green: 0.09, blue: 0.14),
+            Color(red: 0.11, green: 0.09, blue: 0.18)
+        ]
+        return LinearGradient(
+            colors: isDarkMode ? darkColors : lightColors,
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    private var circleFill: Color {
+        isDarkMode ? Color(.tertiarySystemBackground).opacity(0.95) : Color.white.opacity(0.95)
+    }
+
+    private var cardFill: Color {
+        isDarkMode ? Color(.secondarySystemBackground).opacity(0.95) : Color.white.opacity(0.85)
+    }
+
+    private var cardShadow: Color {
+        isDarkMode ? Color.black.opacity(0.4) : Color.black.opacity(0.05)
+    }
+
     var body: some View {
         GeometryReader { proxy in
             let w = proxy.size.width
@@ -520,14 +564,7 @@ private struct ScanPlaceholderView: View {
             
             ZStack {
                 // Subtle gradient background
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.93, green: 0.95, blue: 0.98),
-                        Color(red: 0.96, green: 0.94, blue: 0.98)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
+                backgroundGradient
                 
                 VStack(spacing: AppSpacing.l) {
                     // Elegant circular image container
@@ -549,7 +586,7 @@ private struct ScanPlaceholderView: View {
                         
                         // Main image circle
                         Circle()
-                            .fill(Color.white.opacity(0.95))
+                            .fill(circleFill)
                             .frame(width: circleSize, height: circleSize)
                             .shadow(color: Color.blue.opacity(0.1), radius: 16, x: 0, y: 8)
                         
@@ -585,8 +622,8 @@ private struct ScanPlaceholderView: View {
                     .frame(maxWidth: .infinity)
                     .background(
                         RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
-                            .fill(Color.white.opacity(0.85))
-                            .shadow(color: Color.black.opacity(0.05), radius: 12, x: 0, y: 4)
+                            .fill(cardFill)
+                            .shadow(color: cardShadow, radius: 12, x: 0, y: 4)
                     )
                     .padding(.horizontal, AppSpacing.l)
                     .layoutPriority(1)
@@ -603,8 +640,25 @@ private struct ScanPlaceholderView: View {
 
 // MARK: - Selected Photo View
 private struct SelectedPhotoView: View {
+    @Environment(\.colorScheme) private var colorScheme
     let image: UIImage
     
+    private var accentBackground: LinearGradient {
+        let lightColors = [
+            Color.blue.opacity(0.07),
+            Color.purple.opacity(0.05)
+        ]
+        let darkColors = [
+            Color.blue.opacity(0.18),
+            Color.purple.opacity(0.14)
+        ]
+        return LinearGradient(
+            colors: colorScheme == .dark ? darkColors : lightColors,
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
     var body: some View {
         GeometryReader { proxy in
             let availableSize = proxy.size
@@ -674,14 +728,7 @@ private struct SelectedPhotoView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(
-                LinearGradient(
-                    colors: [
-                        Color.blue.opacity(0.07),
-                        Color.purple.opacity(0.05)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                accentBackground
             )
             .padding(.horizontal, AppSpacing.l)
         }
@@ -717,7 +764,7 @@ private struct InstructionRow: View {
             Text(text)
                 .font(.subheadline)
                 .fontWeight(.medium)
-                .foregroundStyle(Color(white: 0.3))
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.leading)
             
             Spacer(minLength: 0)
@@ -836,11 +883,11 @@ private struct AnalysisOverlay: View {
                     VStack(spacing: AppSpacing.s) {
                 Text("Analyzing Your Smile")
                             .font(.title2.weight(.semibold))
-                            .foregroundStyle(Color.black.opacity(0.92))
+                            .foregroundStyle(Color.primary.opacity(0.92))
                         Text("We’re polishing the details to craft your personalized insights.")
                             .font(.body)
                             .multilineTextAlignment(.center)
-                            .foregroundStyle(Color.black.opacity(0.72))
+                            .foregroundStyle(Color.secondary)
                     }
                     .padding(.horizontal, AppSpacing.xl)
                     
@@ -996,15 +1043,38 @@ private extension AnalysisOverlay {
     }
 }
 private struct ShimmeringProgressCapsule: View {
+    @Environment(\.colorScheme) private var colorScheme
     @State private var shimmer = false
     
+    private var capsuleFill: Color {
+        colorScheme == .dark ? Color.white.opacity(0.16) : Color.white.opacity(0.35)
+    }
+
+    private var capsuleStroke: Color {
+        colorScheme == .dark ? Color.white.opacity(0.2) : Color.black.opacity(0.12)
+    }
+
+    private var shimmerColors: [Color] {
+        colorScheme == .dark
+            ? [Color.white.opacity(0), Color.white.opacity(0.7), Color.white.opacity(0)]
+            : [Color.white.opacity(0), Color.white.opacity(0.9), Color.white.opacity(0)]
+    }
+
+    private var capsuleTextColor: Color {
+        Color.primary.opacity(0.9)
+    }
+
+    private var capsuleShadow: Color {
+        colorScheme == .dark ? Color.black.opacity(0.35) : Color.black.opacity(0.15)
+    }
+
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(Color.white.opacity(0.35))
+                .fill(capsuleFill)
                 .overlay(
                     RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .stroke(Color.black.opacity(0.12), lineWidth: 1)
+                        .stroke(capsuleStroke, lineWidth: 1)
                 )
                 .frame(height: 56)
                 .overlay(
@@ -1012,9 +1082,9 @@ private struct ShimmeringProgressCapsule: View {
                         let width = geo.size.width
                         LinearGradient(
                             gradient: Gradient(colors: [
-                                Color.white.opacity(0),
-                                Color.white.opacity(0.9),
-                                Color.white.opacity(0)
+                                shimmerColors[0],
+                                shimmerColors[1],
+                                shimmerColors[2]
                             ]),
                             startPoint: .leading,
                             endPoint: .trailing
@@ -1029,15 +1099,15 @@ private struct ShimmeringProgressCapsule: View {
                     HStack(spacing: AppSpacing.s) {
                         Image(systemName: "sparkles")
                             .font(.title3.weight(.semibold))
-                            .foregroundStyle(Color.black.opacity(0.9))
-                            .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 0)
+                            .foregroundStyle(capsuleTextColor)
+                            .shadow(color: capsuleShadow.opacity(0.25), radius: 2, x: 0, y: 0)
                         Text("Analyzing…")
                             .font(.headline.weight(.semibold))
-                            .foregroundStyle(Color.black.opacity(0.9))
+                            .foregroundStyle(capsuleTextColor)
             }
                 )
                 .compositingGroup()
-                .shadow(color: Color.black.opacity(0.15), radius: 16, x: 0, y: 10)
+                .shadow(color: capsuleShadow, radius: 16, x: 0, y: 10)
         }
         .onAppear {
             shimmer = true
@@ -1105,7 +1175,7 @@ private struct StainTagChip: View {
             .padding(.vertical, 10)
             .padding(.horizontal, 14)
             .frame(maxWidth: .infinity)
-            .background(isSelected ? Color.blue.opacity(0.12) : Color.white)
+            .background(isSelected ? Color.blue.opacity(0.12) : Color(.secondarySystemBackground))
             .foregroundStyle(isSelected ? Color.blue : Color.primary)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(

@@ -56,7 +56,7 @@ struct ElegantSecondaryButtonStyle: ButtonStyle {
             )
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                    .fill(Color.white.opacity(0.9))
+                    .fill(Color(.systemBackground).opacity(0.95))
                     .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 4)
             )
             .overlay(
@@ -118,7 +118,7 @@ struct FloatingSecondaryButtonStyle: ButtonStyle {
             )
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                    .fill(Color.white)
+                    .fill(Color(.systemBackground))
                     .shadow(
                         color: Color.black.opacity(configuration.isPressed ? 0.08 : 0.12),
                         radius: configuration.isPressed ? 10 : 14,
@@ -160,7 +160,7 @@ struct FloatingIconButtonStyle: ButtonStyle {
             )
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                    .fill(Color.white)
+                    .fill(Color(.systemBackground))
                     .shadow(
                         color: Color.black.opacity(configuration.isPressed ? 0.06 : 0.1),
                         radius: configuration.isPressed ? 8 : 12,
@@ -171,7 +171,7 @@ struct FloatingIconButtonStyle: ButtonStyle {
             .overlay(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                     .strokeBorder(
-                        Color.white.opacity(0.8),
+                        Color.primary.opacity(0.12),
                         lineWidth: 0.5
                     )
             )
