@@ -528,7 +528,7 @@ private struct ShadeSwatchView: View {
                 .frame(width: 56, height: 56)
                 .overlay(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Color.white.opacity(0.4), lineWidth: 1)
+                        .stroke(Color.primary.opacity(0.15), lineWidth: 1)
                 )
             Text(shadeLabel)
                 .font(.caption2.weight(.semibold))
