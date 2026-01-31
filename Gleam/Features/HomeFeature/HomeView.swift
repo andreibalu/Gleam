@@ -21,6 +21,7 @@ struct HomeView: View {
     @State private var hasSyncedCloudState = false
     @State private var showAchievementsModal = false
     @State private var showHabitSheet = false
+    @State private var showFlow = false
 
     private let shadeStages = ShadeStage.defaults
     private let defaultPlan = Recommendations(
@@ -113,7 +114,8 @@ struct HomeView: View {
                 }
 
                 BrushingHabitCard(
-                    onConfigureTap: { showHabitSheet = true }
+                    onConfigureTap: { showHabitSheet = true },
+                    onStartFlow: { showFlow = true }
                 )
 
                 PlanPreviewCard(
@@ -176,6 +178,21 @@ struct HomeView: View {
                 brushingHabitStore.configure(morning: morning, evening: evening)
             }
             .presentationDetents([.medium, .large])
+        }
+        .fullScreenCover(isPresented: $showFlow) {
+            FlowView {
+                // Determine current slot based on time of day
+                let hour = Calendar.current.component(.hour, from: Date())
+                let slot: BrushingSlot = (hour >= 3 && hour < 15) ? .morning : .evening
+                
+                // Mark as complete
+                let result = brushingHabitStore.markBrushed(slot)
+                
+                // Trigger celebration if successful
+                if result == .recorded {
+                    BrushingHaptics.celebrate()
+                }
+            }
         }
         .overlay(alignment: .center) {
             if let celebration = achievementManager.activeCelebration {
@@ -734,6 +751,7 @@ private struct JourneyProgressSection: View {
 private struct BrushingHabitCard: View {
     @EnvironmentObject private var store: BrushingHabitStore
     let onConfigureTap: () -> Void
+    let onStartFlow: () -> Void
 
     @State private var celebratorySlot: BrushingSlot?
     @State private var isAnimatingCelebration = false
@@ -743,6 +761,28 @@ private struct BrushingHabitCard: View {
             header
 
             if store.isConfigured {
+                Button {
+                    onStartFlow()
+                } label: {
+                    HStack {
+                        Image(systemName: "wind")
+                        Text("Start guided flow")
+                    }
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.blue.opacity(0.8), Color.purple.opacity(0.8)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .padding(.bottom, AppSpacing.s)
+
                 BrushingOrbitDiagram(
                     morningState: store.slotState(for: .morning),
                     eveningState: store.slotState(for: .evening),
