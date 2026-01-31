@@ -945,45 +945,50 @@ private struct BrushingOrbitDiagram: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let size = geometry.size
-            let inset = AppSpacing.l
-            let start = CGPoint(x: inset, y: size.height - inset)
-            let end = CGPoint(x: size.width - inset, y: inset)
-            let morningPoint = start.interpolate(to: end, progress: 0.32)
-            let eveningPoint = start.interpolate(to: end, progress: 0.72)
-            let progress = CGFloat(max(0, min(recordProgress, 1)))
-            let progressPoint = start.interpolate(to: end, progress: progress)
-
+            let width = geometry.size.width
+            let height = geometry.size.height
+            
+            // Curve points
+            let start = CGPoint(x: 40, y: height - 50)
+            let end = CGPoint(x: width - 40, y: height - 50)
+            let control = CGPoint(x: width / 2, y: -20)
+            
+            // Button positions along the curve
+            let morningPoint = pointOnQuadCurve(t: 0.28, p0: start, p1: control, p2: end)
+            let eveningPoint = pointOnQuadCurve(t: 0.72, p0: start, p1: control, p2: end)
+            
             ZStack {
+                // The Path
                 Path { path in
                     path.move(to: start)
-                    path.addLine(to: end)
+                    path.addQuadCurve(to: end, control: control)
                 }
-                .stroke(Color.primary.opacity(0.08), style: StrokeStyle(lineWidth: 12, lineCap: .round))
-
-                if progress > 0 {
-                    Path { path in
-                        path.move(to: start)
-                        path.addLine(to: progressPoint)
-                    }
-                    .stroke(
-                        LinearGradient(
-                            colors: [Color.accentColor, Color.accentColor.opacity(0.7)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        ),
-                        style: StrokeStyle(lineWidth: 12, lineCap: .round)
-                    )
-                }
-
-                Text("☀️")
-                    .font(.system(size: 36))
-                    .position(x: start.x - 6, y: min(size.height, start.y + 8))
-
-                Text("🌙")
-                    .font(.system(size: 36))
-                    .position(x: end.x + 6, y: max(0, end.y - 8))
-
+                .stroke(
+                    LinearGradient(
+                        colors: [Color.orange.opacity(0.4), Color.purple.opacity(0.4)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ),
+                    style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [6, 10])
+                )
+                
+                // Sun Icon (Morning side)
+                Image(systemName: "sun.max.fill")
+                    .font(.system(size: 28))
+                    .foregroundStyle(Color.orange)
+                    .position(x: width * 0.15, y: height * 0.25)
+                    .shadow(color: .orange.opacity(0.5), radius: 10)
+                    .opacity(0.9)
+                
+                // Moon Icon (Evening side)
+                Image(systemName: "moon.stars.fill")
+                    .font(.system(size: 28))
+                    .foregroundStyle(Color.indigo)
+                    .position(x: width * 0.85, y: height * 0.25)
+                    .shadow(color: .indigo.opacity(0.5), radius: 10)
+                    .opacity(0.9)
+                
+                // Morning Button
                 ToothButton(
                     slot: .morning,
                     state: morningState,
@@ -991,7 +996,8 @@ private struct BrushingOrbitDiagram: View {
                     onLongPress: { onLongPress(.morning) }
                 )
                 .position(morningPoint)
-
+                
+                // Evening Button
                 ToothButton(
                     slot: .evening,
                     state: eveningState,
@@ -1000,13 +1006,14 @@ private struct BrushingOrbitDiagram: View {
                 )
                 .position(eveningPoint)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
-
-    private var recordProgress: Double {
-        let completed = (record.morningCompleted ? 1.0 : 0.0) + (record.eveningCompleted ? 1.0 : 0.0)
-        return completed / 2.0
+    
+    private func pointOnQuadCurve(t: CGFloat, p0: CGPoint, p1: CGPoint, p2: CGPoint) -> CGPoint {
+        let oneMinusT = 1 - t
+        let x = oneMinusT * oneMinusT * p0.x + 2 * oneMinusT * t * p1.x + t * t * p2.x
+        let y = oneMinusT * oneMinusT * p0.y + 2 * oneMinusT * t * p1.y + t * t * p2.y
+        return CGPoint(x: x, y: y)
     }
 }
 
