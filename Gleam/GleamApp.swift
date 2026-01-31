@@ -11,6 +11,7 @@ import FirebaseCore
 
 @main
 struct GleamApp: App {
+    @AppStorage(AppTheme.storageKey) private var themeRawValue: String = AppTheme.system.rawValue
     @StateObject private var scanSession = ScanSession()
     @StateObject private var historyStore: HistoryStore
     @StateObject private var achievementManager: AchievementManager
@@ -20,6 +21,7 @@ struct GleamApp: App {
 
     init() {
         Self.configureFirebase()
+        AppTheme.migrateLegacySettingIfNeeded()
         let historyRepository = PersistentHistoryRepository()
         let authRepository = FirebaseAuthRepository()
         self.authRepository = authRepository
@@ -45,6 +47,10 @@ struct GleamApp: App {
         ))
         _brushingHabitStore = StateObject(wrappedValue: BrushingHabitStore())
     }
+
+    private var selectedTheme: AppTheme {
+        AppTheme(rawValue: themeRawValue) ?? .system
+    }
     
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
@@ -62,6 +68,7 @@ struct GleamApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .preferredColorScheme(selectedTheme.colorScheme)
                 .scanRepository(scanRepository)
                 .authRepository(authRepository)
                 .environmentObject(scanSession)

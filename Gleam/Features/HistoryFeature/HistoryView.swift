@@ -218,7 +218,7 @@ private struct HighlightMetric: View {
         .padding()
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.65))
+                .fill(AppColors.card)
         )
     }
 }

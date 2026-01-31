@@ -4,7 +4,7 @@ struct SettingsView: View {
     @Environment(\.authRepository) private var authRepository
     @EnvironmentObject private var scanSession: ScanSession
     @EnvironmentObject private var historyStore: HistoryStore
-    @AppStorage("isDarkMode") private var isDarkMode: Bool = false
+    @AppStorage(AppTheme.storageKey) private var themeRawValue: String = AppTheme.system.rawValue
     @AppStorage("didCompleteOnboarding") private var didCompleteOnboarding: Bool = false
     @State private var showResetAlert: Bool = false
     @State private var showSignOutAlert: Bool = false
@@ -12,12 +12,22 @@ struct SettingsView: View {
     @State private var isDeleting: Bool = false
     @State private var errorMessage: String?
 
+    private var themeSelection: Binding<AppTheme> {
+        Binding(
+            get: { AppTheme(rawValue: themeRawValue) ?? .system },
+            set: { themeRawValue = $0.rawValue }
+        )
+    }
+
     var body: some View {
         Form {
             Section(header: Text("Appearance")) {
-                Toggle(isOn: $isDarkMode) {
-                    Text("Dark Mode")
+                Picker("Theme", selection: themeSelection) {
+                    ForEach(AppTheme.allCases) { theme in
+                        Text(theme.displayName).tag(theme)
+                    }
                 }
+                .pickerStyle(.segmented)
             }
             Section(header: Text("Privacy")) {
                 Link("Privacy Policy", destination: URL(string: "https://gen-lang-client-0740636332.web.app/privacy.html")!)
