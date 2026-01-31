@@ -337,20 +337,21 @@ private struct HistoryCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.m) {
-            HStack(alignment: .top, spacing: AppSpacing.m) {
+            HStack(spacing: AppSpacing.s) {
+                Text(shadeDescription)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Spacer(minLength: AppSpacing.s)
+                Label(formattedDate, systemImage: "calendar")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+
+            HStack(alignment: .center, spacing: AppSpacing.m) {
                 ScoreBadge(normalizedScore: normalizedScore, scoreColor: scoreColor, scoreEmoji: scoreEmoji, scoreLabel: scoreLabel)
-
-                VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                    Text(shadeDescription)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Text(formattedDate)
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-
                 Spacer()
-
                 ScanPhotoView(imageData: imageData)
             }
 
