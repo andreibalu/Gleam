@@ -186,7 +186,7 @@ struct HomeView: View {
                 let slot: BrushingSlot = (hour >= 3 && hour < 15) ? .morning : .evening
                 
                 // Mark as complete
-                let result = brushingHabitStore.markBrushed(slot)
+                let result = brushingHabitStore.markBrushed(slot, force: true)
                 
                 // Trigger celebration if successful
                 if result == .recorded {
@@ -1057,11 +1057,7 @@ private struct ToothButton: View {
         }
         .overlay(alignment: .topTrailing) {
             if state == .locked {
-                Image(systemName: "lock.fill")
-                    .font(.caption.bold())
-                    .padding(6)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .offset(x: 6, y: -6)
+                // No lock icon, just muted appearance
             }
         }
         .scaleEffect(scale)
@@ -1082,7 +1078,7 @@ private struct ToothButton: View {
         case .available:
             return Color(.systemBackground)
         case .locked:
-            return Color.primary.opacity(0.08)
+            return Color.primary.opacity(0.04)
         }
     }
 
@@ -1093,7 +1089,7 @@ private struct ToothButton: View {
         case .available:
             return .primary
         case .locked:
-            return .secondary
+            return .secondary.opacity(0.3)
         }
     }
 
@@ -1102,7 +1098,7 @@ private struct ToothButton: View {
         case .available:
             return Color.primary.opacity(0.08)
         case .locked:
-            return Color.primary.opacity(0.1)
+            return Color.primary.opacity(0.05)
         case .completed:
             return .clear
         }
@@ -1115,7 +1111,7 @@ private struct ToothButton: View {
         case .available:
             return Color.black.opacity(0.08)
         case .locked:
-            return Color.black.opacity(0.03)
+            return .clear
         }
     }
 

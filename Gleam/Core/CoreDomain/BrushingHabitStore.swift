@@ -217,13 +217,15 @@ final class BrushingHabitStore: ObservableObject {
     }
 
     @discardableResult
-    func markBrushed(_ slot: BrushingSlot, date: Date = Date()) -> BrushingCompletionResult {
+    func markBrushed(_ slot: BrushingSlot, date: Date = Date(), force: Bool = false) -> BrushingCompletionResult {
         guard isConfigured else { return .notConfigured }
 
         refreshIfNeeded(date: date)
 
-        guard isSlotAvailable(slot, at: date) else {
-            return .locked
+        if !force {
+            guard isSlotAvailable(slot, at: date) else {
+                return .locked
+            }
         }
 
         let currentDay = calendar.startOfDay(for: date)
