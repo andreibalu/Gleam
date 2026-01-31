@@ -186,7 +186,7 @@ struct HomeView: View {
                 let slot: BrushingSlot = (hour >= 3 && hour < 15) ? .morning : .evening
                 
                 // Mark as complete
-                let result = brushingHabitStore.markBrushed(slot, force: true)
+                let result = brushingHabitStore.markBrushed(slot, source: .flow)
                 
                 // Trigger celebration if successful
                 if result == .recorded {
@@ -795,10 +795,6 @@ private struct BrushingHabitCard: View {
 
                 progressView
                 reminderSummary
-
-                Text("Sun tooth unlocks 5 AM - 3 PM. Moon tooth glows 3 PM - midnight. Long-press to log each brushing.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             } else {
                 setupPrompt
             }

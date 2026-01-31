@@ -79,6 +79,11 @@ enum BrushingSlotState: Equatable {
     case completed
 }
 
+enum BrushingSource {
+    case manual
+    case flow
+}
+
 enum BrushingCompletionResult {
     case recorded
     case alreadyCompleted
@@ -217,12 +222,12 @@ final class BrushingHabitStore: ObservableObject {
     }
 
     @discardableResult
-    func markBrushed(_ slot: BrushingSlot, date: Date = Date(), force: Bool = false) -> BrushingCompletionResult {
+    func markBrushed(_ slot: BrushingSlot, date: Date = Date(), source: BrushingSource = .manual) -> BrushingCompletionResult {
         guard isConfigured else { return .notConfigured }
 
         refreshIfNeeded(date: date)
 
-        if !force {
+        if source == .manual {
             guard isSlotAvailable(slot, at: date) else {
                 return .locked
             }
@@ -255,9 +260,12 @@ final class BrushingHabitStore: ObservableObject {
         let hour = calendar.component(.hour, from: date)
         switch slot {
         case .morning:
-            return hour >= 5 && hour < 15
+            // Morning available from 4 AM to 3 PM
+            return hour >= 4 && hour < 15
         case .evening:
-            return hour >= 15 && hour < 24
+            // Evening available from 3 PM to 4 AM (next day)
+            // Effectively 15:00 - 24:00 and 00:00 - 04:00
+            return hour >= 15 || hour < 4
         }
     }
 
