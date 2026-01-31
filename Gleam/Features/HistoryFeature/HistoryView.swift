@@ -130,95 +130,123 @@ private struct HistoryHighlightsView: View {
         return shadeMap[latestShade.uppercased()] ?? latestShade.uppercased()
     }
 
+    private var latestCaption: String {
+        shadeDescription.isEmpty ? "Latest scan" : shadeDescription
+    }
+
+    private var averageValueText: String {
+        averageAvailable ? String(format: "%.1f", averageScore) : "—"
+    }
+
+    private var averageCaptionText: String {
+        averageAvailable ? averageMode.shortCaption : "No data"
+    }
+
+    private var averageTint: Color {
+        averageAvailable ? .green : .secondary
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.m) {
-            Text("Your whitening journey")
-                .font(.title3.bold())
+            HStack(spacing: AppSpacing.s) {
+                Text("Your journey")
+                    .font(.headline.weight(.semibold))
+                Spacer(minLength: 0)
+                Button(action: onAverageTap) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "calendar")
+                        Text("Avg \(averageMode.shortCaption)")
+                        Image(systemName: "chevron.down")
+                            .font(.caption2.weight(.bold))
+                    }
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule()
+                        .fill(Color(.tertiarySystemBackground))
+                )
+                .buttonStyle(.plain)
+            }
 
-            VStack(alignment: .leading, spacing: AppSpacing.m) {
-                HighlightMetric(
-                    title: "Latest Score",
+            HStack(spacing: AppSpacing.s) {
+                JourneyMetricTile(
+                    title: "Latest",
                     value: String(format: "%.1f", latestScore),
-                    caption: shadeDescription,
+                    caption: latestCaption,
                     icon: "sparkle.magnifyingglass",
-                    tint: .blue
+                    tint: .blue,
+                    isEmphasized: true
                 )
 
-                HighlightMetric(
-                    title: "Current Streak",
+                JourneyMetricTile(
+                    title: "Streak",
                     value: "\(currentStreak)",
                     caption: "Best \(bestStreak)",
                     icon: "flame.fill",
                     tint: currentStreak > 0 ? .orange : .gray
                 )
 
-                if averageAvailable {
-                    HighlightMetric(
-                        title: "Average",
-                        value: String(format: "%.1f", averageScore),
-                        caption: averageMode.caption,
-                        icon: "chart.line.uptrend.xyaxis",
-                        tint: .green,
-                        onTitleTap: onAverageTap
-                    )
-                }
+                JourneyMetricTile(
+                    title: "Average",
+                    value: averageValueText,
+                    caption: averageCaptionText,
+                    icon: "chart.line.uptrend.xyaxis",
+                    tint: averageTint,
+                    valueTint: averageAvailable ? .primary : .secondary
+                )
             }
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [Color.blue.opacity(0.15), Color.purple.opacity(0.15)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Color(.secondarySystemBackground))
+                .shadow(color: Color.black.opacity(0.08), radius: 10, x: 0, y: 4)
         )
     }
 }
 
-private struct HighlightMetric: View {
+private struct JourneyMetricTile: View {
     let title: String
     let value: String
     let caption: String
     let icon: String
     let tint: Color
-    var onTitleTap: (() -> Void)? = nil
+    var valueTint: Color? = nil
+    var isEmphasized: Bool = false
+
+    private var resolvedValueTint: Color {
+        valueTint ?? (isEmphasized ? tint : .primary)
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.xs) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: icon)
                     .foregroundStyle(tint)
-                if let onTitleTap {
-                    Button(action: onTitleTap) {
-                        Text(title)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .underline()
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    Text(title)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
+                Text(title)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
             }
-
             Text(value)
-                .font(.system(size: 28, weight: .bold, design: .rounded))
-                .foregroundStyle(.primary)
+                .font(.system(size: isEmphasized ? 24 : 20, weight: .bold, design: .rounded))
+                .foregroundStyle(resolvedValueTint)
+                .monospacedDigit()
 
             Text(caption)
-                .font(.footnote)
+                .font(.caption2)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
+        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(AppColors.card)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(isEmphasized ? tint.opacity(0.14) : Color(.tertiarySystemBackground))
         )
     }
 }
@@ -233,6 +261,14 @@ private enum AverageMode: CaseIterable {
         case .last5: return "Across last 5 scans"
         case .last7Days: return "Last 7 days"
         case .last30Days: return "Last 30 days"
+        }
+    }
+
+    var shortCaption: String {
+        switch self {
+        case .last5: return "Last 5"
+        case .last7Days: return "7 days"
+        case .last30Days: return "30 days"
         }
     }
 
