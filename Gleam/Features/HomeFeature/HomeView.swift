@@ -98,22 +98,19 @@ struct HomeView: View {
                     nextStage: nextStage(after: displayScore ?? 0),
                     deltaToNext: deltaToNextStage,
                     hasScan: lastResult != nil,
-                    onScan: { showCamera = true }
-                )
-
-                JourneyProgressSection(
-                    score: displayScore,
-                    stages: shadeStages,
-                    nextStage: nextStage(after: displayScore ?? 0)
-                )
-
-                DailyChallengeCard(
-                    isCompletedToday: hasScanToday,
-                    message: challengeMessage,
+                    hasScanToday: hasScanToday,
+                    currentStreak: historyStore.currentStreak,
                     onScan: { showCamera = true },
-                    onCompare: { scanSession.shouldOpenHistory = true },
-                    latestResult: lastResult
+                    onCompare: { scanSession.shouldOpenHistory = true }
                 )
+
+                if hasScanToday {
+                    JourneyProgressSection(
+                        score: displayScore,
+                        stages: shadeStages,
+                        nextStage: nextStage(after: displayScore ?? 0)
+                    )
+                }
 
                 BrushingHabitCard(
                     onConfigureTap: { showHabitSheet = true }
@@ -339,14 +336,6 @@ struct HomeView: View {
         return trimmed.capitalized
     }
 
-    private var challengeMessage: String {
-        if historyStore.currentStreak > 0 {
-            return "Scan your smile before 10 PM to extend your streak 🔥"
-        } else {
-            return "Take your first scan today and start your streak ✨"
-        }
-    }
-
     private var learnCards: [LearnCard] {
         guard let result = lastResult else {
             return defaultLearnCards
@@ -487,7 +476,10 @@ private struct HomeHeroCard: View {
     let nextStage: ShadeStage?
     let deltaToNext: Double?
     let hasScan: Bool
+    let hasScanToday: Bool
+    let currentStreak: Int
     let onScan: () -> Void
+    let onCompare: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.l) {
@@ -495,35 +487,68 @@ private struct HomeHeroCard: View {
                 VStack(alignment: .leading, spacing: AppSpacing.xs) {
                     Text("\(greeting), \(userName)")
                         .font(.system(size: 28, weight: .semibold, design: .rounded))
-                    if hasScan {
-                        Text("Here's where your smile stands today.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("Let's start your gleam journey.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
+                    Text(subtitleText)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Text(emoji)
                     .font(.system(size: 32))
             }
 
-            HStack(alignment: .center, spacing: AppSpacing.l) {
-                ScoreOrb(score: score, gradient: stage.gradient)
+            if hasScanToday {
+                // Show score when user has scanned today
+                HStack(alignment: .center, spacing: AppSpacing.l) {
+                    ScoreOrb(score: score, gradient: stage.gradient)
 
-                VStack(alignment: .leading, spacing: AppSpacing.s) {
-                    if let score {
-                        Text(String(format: "%.1f", score))
-                            .font(.system(size: 42, weight: .bold, design: .rounded))
-                        Text(stage.descriptor)
-                            .font(.headline)
-                            .foregroundStyle(stage.accentColor)
-                        Text(progressMessage)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    } else {
+                    VStack(alignment: .leading, spacing: AppSpacing.s) {
+                        if let score {
+                            Text(String(format: "%.1f", score))
+                                .font(.system(size: 42, weight: .bold, design: .rounded))
+                            Text(stage.descriptor)
+                                .font(.headline)
+                                .foregroundStyle(stage.accentColor)
+                            Text(progressMessage)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+            } else if hasScan {
+                // User has previous scans but not today - show challenge
+                VStack(alignment: .leading, spacing: AppSpacing.m) {
+                    Text(challengeMessage)
+                        .font(.title3.weight(.semibold))
+
+                    HStack(spacing: AppSpacing.s) {
+                        Button {
+                            onScan()
+                        } label: {
+                            Label("Take Photo", systemImage: "camera.fill")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                        }
+                        .buttonStyle(FloatingPrimaryButtonStyle())
+
+                        Button {
+                            onCompare()
+                        } label: {
+                            Text("Compare Progress")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                        }
+                        .buttonStyle(FloatingSecondaryButtonStyle())
+                    }
+                }
+            } else {
+                // No scans at all - first time user
+                HStack(alignment: .center, spacing: AppSpacing.l) {
+                    ScoreOrb(score: nil, gradient: stage.gradient)
+
+                    VStack(alignment: .leading, spacing: AppSpacing.s) {
                         Text("Ready to begin?")
                             .font(.title3.bold())
                         Text("Capture your first scan to unlock your personalized plan.")
@@ -539,8 +564,8 @@ private struct HomeHeroCard: View {
                         .buttonStyle(FloatingPrimaryButtonStyle())
                         .padding(.top, AppSpacing.s)
                     }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
             }
         }
         .padding(AppSpacing.l)
@@ -549,6 +574,24 @@ private struct HomeHeroCard: View {
                 .fill(AppColors.card)
                 .shadow(color: Color.black.opacity(0.06), radius: 20, x: 0, y: 12)
         )
+    }
+
+    private var subtitleText: String {
+        if hasScanToday {
+            return "Here's where your smile stands today."
+        } else if hasScan {
+            return "Time to check in on your smile."
+        } else {
+            return "Let's start your gleam journey."
+        }
+    }
+
+    private var challengeMessage: String {
+        if currentStreak > 0 {
+            return "Keep your \(currentStreak)-day streak alive! Scan your smile today."
+        } else {
+            return "Take your first scan today and start your streak."
+        }
     }
 
     private var progressMessage: String {
@@ -682,57 +725,6 @@ private struct JourneyProgressSection: View {
             colors: currentStage.gradient,
             startPoint: .leading,
             endPoint: .trailing
-        )
-    }
-}
-
-// MARK: - Daily Challenge
-
-private struct DailyChallengeCard: View {
-    let isCompletedToday: Bool
-    let message: String
-    let onScan: () -> Void
-    let onCompare: () -> Void
-    let latestResult: ScanResult?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.m) {
-            Text(isCompletedToday ? "Challenge completed" : "Today's Challenge")
-                .font(.headline)
-            if !isCompletedToday {
-                Text(message)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            HStack(spacing: AppSpacing.s) {
-                if !isCompletedToday {
-                    Button {
-                        onScan()
-                    } label: {
-                        Label("Take Photo", systemImage: "camera.fill")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                    }
-                    .buttonStyle(FloatingPrimaryButtonStyle())
-                }
-
-                Button {
-                    onCompare()
-                } label: {
-                    Text("Compare Progress")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                }
-                .buttonStyle(FloatingSecondaryButtonStyle())
-            }
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                .fill(AppColors.card)
         )
     }
 }
