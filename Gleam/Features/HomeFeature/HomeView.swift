@@ -21,6 +21,7 @@ struct HomeView: View {
     @State private var hasSyncedCloudState = false
     @State private var showAchievementsModal = false
     @State private var showHabitSheet = false
+    @State private var showFlow = false
 
     private let shadeStages = ShadeStage.defaults
     private let defaultPlan = Recommendations(
@@ -113,7 +114,8 @@ struct HomeView: View {
                 }
 
                 BrushingHabitCard(
-                    onConfigureTap: { showHabitSheet = true }
+                    onConfigureTap: { showHabitSheet = true },
+                    onStartFlow: { showFlow = true }
                 )
 
                 PlanPreviewCard(
@@ -165,6 +167,21 @@ struct HomeView: View {
                 brushingHabitStore.configure(morning: morning, evening: evening)
             }
             .presentationDetents([.medium, .large])
+        }
+        .fullScreenCover(isPresented: $showFlow) {
+            FlowView {
+                // Determine current slot based on time of day
+                let hour = Calendar.current.component(.hour, from: Date())
+                let slot: BrushingSlot = (hour >= 4 && hour < 15) ? .morning : .evening
+                
+                // Mark as complete
+                let result = brushingHabitStore.markBrushed(slot, source: .flow)
+                
+                // Trigger celebration if successful
+                if result == .recorded {
+                    BrushingHaptics.celebrate()
+                }
+            }
         }
         .overlay(alignment: .center) {
             if let celebration = achievementManager.activeCelebration {
@@ -723,6 +740,7 @@ private struct JourneyProgressSection: View {
 private struct BrushingHabitCard: View {
     @EnvironmentObject private var store: BrushingHabitStore
     let onConfigureTap: () -> Void
+    let onStartFlow: () -> Void
 
     @State private var celebratorySlot: BrushingSlot?
     @State private var isAnimatingCelebration = false
@@ -732,6 +750,28 @@ private struct BrushingHabitCard: View {
             header
 
             if store.isConfigured {
+                Button {
+                    onStartFlow()
+                } label: {
+                    HStack {
+                        Image(systemName: "wind")
+                        Text("Start guided flow")
+                    }
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.blue.opacity(0.8), Color.purple.opacity(0.8)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .padding(.bottom, AppSpacing.s)
+
                 BrushingOrbitDiagram(
                     morningState: store.slotState(for: .morning),
                     eveningState: store.slotState(for: .evening),
@@ -744,10 +784,6 @@ private struct BrushingHabitCard: View {
 
                 progressView
                 reminderSummary
-
-                Text("Sun tooth unlocks 5 AM - 3 PM. Moon tooth glows 3 PM - midnight. Long-press to log each brushing.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             } else {
                 setupPrompt
             }
@@ -898,45 +934,50 @@ private struct BrushingOrbitDiagram: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let size = geometry.size
-            let inset = AppSpacing.l
-            let start = CGPoint(x: inset, y: size.height - inset)
-            let end = CGPoint(x: size.width - inset, y: inset)
-            let morningPoint = start.interpolate(to: end, progress: 0.32)
-            let eveningPoint = start.interpolate(to: end, progress: 0.72)
-            let progress = CGFloat(max(0, min(recordProgress, 1)))
-            let progressPoint = start.interpolate(to: end, progress: progress)
-
+            let width = geometry.size.width
+            let height = geometry.size.height
+            
+            // Curve points
+            let start = CGPoint(x: 40, y: height - 50)
+            let end = CGPoint(x: width - 40, y: height - 50)
+            let control = CGPoint(x: width / 2, y: -20)
+            
+            // Button positions along the curve
+            let morningPoint = pointOnQuadCurve(t: 0.28, p0: start, p1: control, p2: end)
+            let eveningPoint = pointOnQuadCurve(t: 0.72, p0: start, p1: control, p2: end)
+            
             ZStack {
+                // The Path
                 Path { path in
                     path.move(to: start)
-                    path.addLine(to: end)
+                    path.addQuadCurve(to: end, control: control)
                 }
-                .stroke(Color.primary.opacity(0.08), style: StrokeStyle(lineWidth: 12, lineCap: .round))
-
-                if progress > 0 {
-                    Path { path in
-                        path.move(to: start)
-                        path.addLine(to: progressPoint)
-                    }
-                    .stroke(
-                        LinearGradient(
-                            colors: [Color.accentColor, Color.accentColor.opacity(0.7)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        ),
-                        style: StrokeStyle(lineWidth: 12, lineCap: .round)
-                    )
-                }
-
-                Text("☀️")
-                    .font(.system(size: 36))
-                    .position(x: start.x - 6, y: min(size.height, start.y + 8))
-
-                Text("🌙")
-                    .font(.system(size: 36))
-                    .position(x: end.x + 6, y: max(0, end.y - 8))
-
+                .stroke(
+                    LinearGradient(
+                        colors: [Color.orange.opacity(0.4), Color.purple.opacity(0.4)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ),
+                    style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [6, 10])
+                )
+                
+                // Sun Icon (Morning side)
+                Image(systemName: "sun.max.fill")
+                    .font(.system(size: 28))
+                    .foregroundStyle(Color.orange)
+                    .position(x: width * 0.15, y: height * 0.25)
+                    .shadow(color: .orange.opacity(0.5), radius: 10)
+                    .opacity(0.9)
+                
+                // Moon Icon (Evening side)
+                Image(systemName: "moon.stars.fill")
+                    .font(.system(size: 28))
+                    .foregroundStyle(Color.indigo)
+                    .position(x: width * 0.85, y: height * 0.25)
+                    .shadow(color: .indigo.opacity(0.5), radius: 10)
+                    .opacity(0.9)
+                
+                // Morning Button
                 ToothButton(
                     slot: .morning,
                     state: morningState,
@@ -944,7 +985,8 @@ private struct BrushingOrbitDiagram: View {
                     onLongPress: { onLongPress(.morning) }
                 )
                 .position(morningPoint)
-
+                
+                // Evening Button
                 ToothButton(
                     slot: .evening,
                     state: eveningState,
@@ -953,13 +995,14 @@ private struct BrushingOrbitDiagram: View {
                 )
                 .position(eveningPoint)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
-
-    private var recordProgress: Double {
-        let completed = (record.morningCompleted ? 1.0 : 0.0) + (record.eveningCompleted ? 1.0 : 0.0)
-        return completed / 2.0
+    
+    private func pointOnQuadCurve(t: CGFloat, p0: CGPoint, p1: CGPoint, p2: CGPoint) -> CGPoint {
+        let oneMinusT = 1 - t
+        let x = oneMinusT * oneMinusT * p0.x + 2 * oneMinusT * t * p1.x + t * t * p2.x
+        let y = oneMinusT * oneMinusT * p0.y + 2 * oneMinusT * t * p1.y + t * t * p2.y
+        return CGPoint(x: x, y: y)
     }
 }
 
@@ -1006,11 +1049,7 @@ private struct ToothButton: View {
         }
         .overlay(alignment: .topTrailing) {
             if state == .locked {
-                Image(systemName: "lock.fill")
-                    .font(.caption.bold())
-                    .padding(6)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .offset(x: 6, y: -6)
+                // No lock icon, just muted appearance
             }
         }
         .scaleEffect(scale)
@@ -1031,7 +1070,7 @@ private struct ToothButton: View {
         case .available:
             return Color(.systemBackground)
         case .locked:
-            return Color.primary.opacity(0.08)
+            return Color.primary.opacity(0.04)
         }
     }
 
@@ -1042,7 +1081,7 @@ private struct ToothButton: View {
         case .available:
             return .primary
         case .locked:
-            return .secondary
+            return .secondary.opacity(0.3)
         }
     }
 
@@ -1051,7 +1090,7 @@ private struct ToothButton: View {
         case .available:
             return Color.primary.opacity(0.08)
         case .locked:
-            return Color.primary.opacity(0.1)
+            return Color.primary.opacity(0.05)
         case .completed:
             return .clear
         }
@@ -1064,7 +1103,7 @@ private struct ToothButton: View {
         case .available:
             return Color.black.opacity(0.08)
         case .locked:
-            return Color.black.opacity(0.03)
+            return .clear
         }
     }
 
