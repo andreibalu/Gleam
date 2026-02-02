@@ -183,7 +183,7 @@ struct HomeView: View {
             FlowView {
                 // Determine current slot based on time of day
                 let hour = Calendar.current.component(.hour, from: Date())
-                let slot: BrushingSlot = (hour >= 3 && hour < 15) ? .morning : .evening
+                let slot: BrushingSlot = (hour >= 4 && hour < 15) ? .morning : .evening
                 
                 // Mark as complete
                 let result = brushingHabitStore.markBrushed(slot, source: .flow)
