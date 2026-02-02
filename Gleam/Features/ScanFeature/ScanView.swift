@@ -5,7 +5,6 @@ import Vision
 
 struct ScanView: View {
     @Environment(\.scanRepository) private var scanRepository
-    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var scanSession: ScanSession
     @EnvironmentObject private var historyStore: HistoryStore
     @State private var photoItem: PhotosPickerItem? = nil
@@ -19,28 +18,11 @@ struct ScanView: View {
 
     var onFinished: (ScanResult) -> Void
 
-    private var backgroundGradient: LinearGradient {
-        let lightColors = [
-            Color(red: 0.95, green: 0.97, blue: 1.0),
-            Color(red: 0.98, green: 0.95, blue: 1.0)
-        ]
-        let darkColors = [
-            Color(red: 0.06, green: 0.07, blue: 0.11),
-            Color(red: 0.11, green: 0.09, blue: 0.16)
-        ]
-        return LinearGradient(
-            colors: colorScheme == .dark ? darkColors : lightColors,
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
     var body: some View {
         GeometryReader { geometry in
             ZStack {
                 // Background gradient
-                backgroundGradient
-                .ignoresSafeArea()
+                AppBackground()
                 
                 VStack(spacing: 0) {
                     // Main content area

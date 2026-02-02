@@ -61,7 +61,6 @@ struct HistoryView: View {
                     }
                     .padding()
                 }
-                .background(AppColors.background.ignoresSafeArea())
                 .confirmationDialog("Average window", isPresented: $showAveragePicker, titleVisibility: .visible) {
                     Button(AverageMode.last5.menuTitle) { averageMode = .last5 }
                     Button(AverageMode.last7Days.menuTitle) { averageMode = .last7Days }
@@ -69,6 +68,7 @@ struct HistoryView: View {
                 }
             }
         }
+        .background(AppBackground())
         .navigationTitle("History")
         .task { await historyStore.load() }
     }

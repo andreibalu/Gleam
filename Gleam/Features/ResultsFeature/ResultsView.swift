@@ -69,7 +69,7 @@ struct ResultsView: View {
             .padding()
         }
         .navigationTitle("Results")
-        .background(AppColors.background.ignoresSafeArea())
+        .background(AppBackground())
         .task {
             // Load image if historyItemId is available
             if let historyItemId = historyItemId {

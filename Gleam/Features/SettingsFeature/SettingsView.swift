@@ -62,6 +62,8 @@ struct SettingsView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(AppBackground())
         .navigationTitle("Settings")
         .alert("Reset onboarding?", isPresented: $showResetAlert) {
             Button("Cancel", role: .cancel) {}

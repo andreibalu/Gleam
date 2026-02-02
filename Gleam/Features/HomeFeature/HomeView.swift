@@ -137,18 +137,7 @@ struct HomeView: View {
             .padding(.vertical, AppSpacing.l)
             .padding(.horizontal, AppSpacing.m)
         }
-        .background(
-            LinearGradient(
-                colors: [
-                    Color(.systemBackground),
-                    Color(.systemBackground),
-                    Color(.systemBackground).opacity(0.98)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-        )
+        .background(AppBackground())
         .sheet(isPresented: $showCamera) {
             CameraCaptureView { data in
                 scanSession.capturedImageData = data
