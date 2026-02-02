@@ -83,4 +83,7 @@ firebase-debug.*.log
 ui-debug.log
 .firebaserc
 
+# Cursor rules
+.cursor/rules/*.mdc
+
 
