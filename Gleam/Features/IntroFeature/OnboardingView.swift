@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import CoreImage
 
 struct OnboardingView: View {
     private enum Step {
@@ -17,6 +18,7 @@ struct OnboardingView: View {
     @State private var step: Step = .intro
     @State private var showCamera = false
     @State private var capturedImageData: Data?
+    @State private var capturedTeethMatte: CIImage?
     @State private var isSigningIn = false
     @State private var signInError: String?
 
@@ -42,11 +44,13 @@ struct OnboardingView: View {
             .padding(.bottom, AppSpacing.l)
         }
         .sheet(isPresented: $showCamera) {
-            CameraCaptureView { data in
-                if let data {
-                    capturedImageData = data
+            CameraCaptureView { result in
+                if let result {
+                    capturedImageData = result.imageData
+                    capturedTeethMatte = result.teethMatte
                     step = .preview
                 } else {
+                    capturedTeethMatte = nil
                     step = .intro
                 }
                 showCamera = false
@@ -196,6 +200,7 @@ struct OnboardingView: View {
         }
 
         scanSession.capturedImageData = data
+        scanSession.capturedTeethMatte = capturedTeethMatte
         scanSession.shouldOpenCamera = false
         didCompleteOnboarding = true
         dismiss()

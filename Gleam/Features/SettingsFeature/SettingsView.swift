@@ -4,6 +4,7 @@ struct SettingsView: View {
     @Environment(\.authRepository) private var authRepository
     @EnvironmentObject private var scanSession: ScanSession
     @EnvironmentObject private var historyStore: HistoryStore
+    @EnvironmentObject private var proAccess: ProAccessProvider
     @AppStorage(AppTheme.storageKey) private var themeRawValue: String = AppTheme.system.rawValue
     @AppStorage("didCompleteOnboarding") private var didCompleteOnboarding: Bool = false
     @State private var showResetAlert: Bool = false
@@ -61,6 +62,15 @@ struct SettingsView: View {
                     Text("Reset onboarding")
                 }
             }
+
+            #if DEBUG
+            Section(header: Text("Developer")) {
+                Toggle("Pro Access", isOn: $proAccess.isPro)
+                Text(proAccess.isPro ? "Using Pro features" : "Using Free features")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            #endif
         }
         .scrollContentBackground(.hidden)
         .background(AppBackground())

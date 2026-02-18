@@ -5,6 +5,7 @@ struct ResultsView: View {
     let result: ScanResult
     let historyItemId: String?
     @EnvironmentObject private var historyStore: HistoryStore
+    @EnvironmentObject private var proAccess: ProAccessProvider
     @State private var imageData: Data? = nil
     @State private var currentPage: Int = 0
     
@@ -26,11 +27,19 @@ struct ResultsView: View {
         return historyStore.items.first(where: { $0.result == result })
     }
 
+    private var displayResult: ScanResult {
+        matchedHistoryItem?.result ?? result
+    }
+
+    private var isLocalOnly: Bool {
+        matchedHistoryItem?.isLocalOnly ?? false
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppSpacing.l) {
                 SwipeableScoreArea(
-                    score: normalizedScore(result.whitenessScore),
+                    score: normalizedScore(displayResult.whitenessScore),
                     imageData: imageData,
                     currentPage: $currentPage
                 )
@@ -40,28 +49,56 @@ struct ResultsView: View {
                     LifestyleTagSection(tags: contextTagTitles)
                 }
 
-                ResultHeadlineCard(
-                    takeaway: result.personalTakeaway,
-                    referralNeeded: result.referralNeeded
-                )
-
-                ShadeConfidenceCard(
-                    shadeCode: result.shade,
-                    shadeDescription: shadeDescription,
-                    confidence: result.confidence
-                )
-
-                if !result.detectedIssues.isEmpty {
-                    DetectedIssuesSection(issues: result.detectedIssues)
+                if proAccess.isPro, !displayResult.personalTakeaway.isEmpty {
+                    ResultHeadlineCard(
+                        takeaway: displayResult.personalTakeaway,
+                        referralNeeded: displayResult.referralNeeded
+                    )
+                } else if proAccess.isPro, isLocalOnly {
+                    LockedInsightCard(
+                        title: "Personal Takeaway",
+                        icon: "sparkles",
+                        isLoading: true
+                    )
+                } else {
+                    LockedInsightCard(
+                        title: "Personal Takeaway",
+                        icon: "sparkles",
+                        isLoading: false
+                    )
                 }
 
-                ShareLink(item: shareText(for: result)) {
+                ShadeConfidenceCard(
+                    shadeCode: displayResult.shade,
+                    shadeDescription: shadeDescription,
+                    confidence: displayResult.confidence
+                )
+
+                if !displayResult.detectedIssues.isEmpty {
+                    DetectedIssuesSection(issues: displayResult.detectedIssues)
+                } else if isLocalOnly {
+                    if proAccess.isPro {
+                        LockedInsightCard(
+                            title: "Focus Areas",
+                            icon: "exclamationmark.triangle.fill",
+                            isLoading: true
+                        )
+                    } else {
+                        LockedInsightCard(
+                            title: "Focus Areas",
+                            icon: "exclamationmark.triangle.fill",
+                            isLoading: false
+                        )
+                    }
+                }
+
+                ShareLink(item: shareText(for: displayResult, includeTakeaway: proAccess.isPro)) {
                     Label("Share Summary", systemImage: "square.and.arrow.up")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(PrimaryButtonStyle())
 
-                Text(result.disclaimer)
+                Text(displayResult.disclaimer)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .padding(.bottom, AppSpacing.l)
@@ -95,7 +132,7 @@ struct ResultsView: View {
             "C1": "Light", "C2": "Medium", "C3": "Medium-Dark",
             "D2": "Medium", "D3": "Medium-Dark", "D4": "Dark"
         ]
-        return shadeMap[result.shade] ?? result.shade
+        return shadeMap[displayResult.shade] ?? displayResult.shade
     }
 }
 
@@ -349,11 +386,13 @@ private struct LifestyleTagChip: View {
     }
 }
 
-private func shareText(for result: ScanResult) -> String {
+private func shareText(for result: ScanResult, includeTakeaway: Bool) -> String {
     var lines: [String] = []
     lines.append("Gleam Whitening Summary")
     lines.append("Score: \(result.whitenessScore)")
-    lines.append("Takeaway: \(result.personalTakeaway)")
+    if includeTakeaway, !result.personalTakeaway.isEmpty {
+        lines.append("Takeaway: \(result.personalTakeaway)")
+    }
     lines.append("Shade: \(result.shade)")
     return lines.joined(separator: "\n")
 }
@@ -453,6 +492,39 @@ private struct DetectedIssuesSection: View {
                 ForEach(issues, id: \.key) { issue in
                     IssueCard(issue: issue)
                 }
+            }
+        }
+    }
+}
+
+private struct LockedInsightCard: View {
+    let title: String
+    let icon: String
+    let isLoading: Bool
+
+    var body: some View {
+        InsightCard(title: title, icon: icon) {
+            if isLoading {
+                HStack(spacing: 12) {
+                    ProgressView()
+                    Text("Analyzing with AI...")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, AppSpacing.m)
+            } else {
+                VStack(spacing: AppSpacing.s) {
+                    Image(systemName: "lock.fill")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                    Text("Upgrade to Pro for detailed issue detection and personalized coaching")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, AppSpacing.m)
             }
         }
     }

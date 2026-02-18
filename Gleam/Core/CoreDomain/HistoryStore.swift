@@ -63,14 +63,20 @@ final class HistoryStore: ObservableObject {
         calculateStreaks()
     }
 
-    func append(outcome: AnalyzeOutcome, imageData: Data?, fallbackContextTags: [String]) {
+    func append(
+        outcome: AnalyzeOutcome,
+        imageData: Data?,
+        fallbackContextTags: [String],
+        isLocalOnly: Bool = false
+    ) {
         let identifier = outcome.id.isEmpty ? idGenerator() : outcome.id
         let contextTags = outcome.contextTags.isEmpty ? fallbackContextTags : outcome.contextTags
         let newItem = HistoryItem(
             id: identifier,
             createdAt: outcome.createdAt,
             result: outcome.result,
-            contextTags: contextTags
+            contextTags: contextTags,
+            isLocalOnly: isLocalOnly
         )
         
         // Save image locally if provided
@@ -86,6 +92,16 @@ final class HistoryStore: ObservableObject {
         
         appendHandler(newItem)
         items.insert(newItem, at: 0)
+        calculateStreaks()
+    }
+
+    func enrichResult(for id: String, with newResult: ScanResult) {
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        items[index].result = newResult
+        items[index].isLocalOnly = false
+        if let persistent = repository as? PersistentHistoryRepository {
+            Task { await persistent.replaceAll(with: items) }
+        }
         calculateStreaks()
     }
     
@@ -116,7 +132,8 @@ final class HistoryStore: ObservableObject {
                     id: remote.id,
                     createdAt: remote.createdAt,
                     result: remote.result,
-                    contextTags: remote.contextTags
+                    contextTags: remote.contextTags,
+                    isLocalOnly: false
                 )
                 duplicatesFound += 1
                 continue

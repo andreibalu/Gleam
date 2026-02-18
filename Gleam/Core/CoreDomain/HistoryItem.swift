@@ -3,21 +3,24 @@ import Foundation
 struct HistoryItem: Identifiable, Equatable, Hashable, Codable {
     let id: String
     let createdAt: Date
-    let result: ScanResult
+    var result: ScanResult
     let contextTags: [String]
+    var isLocalOnly: Bool
 
     enum CodingKeys: String, CodingKey {
         case id
         case createdAt
         case result
         case contextTags
+        case isLocalOnly
     }
 
-    init(id: String, createdAt: Date, result: ScanResult, contextTags: [String]) {
+    init(id: String, createdAt: Date, result: ScanResult, contextTags: [String], isLocalOnly: Bool = false) {
         self.id = id
         self.createdAt = createdAt
         self.result = result
         self.contextTags = contextTags
+        self.isLocalOnly = isLocalOnly
     }
 
     init(from decoder: Decoder) throws {
@@ -26,6 +29,7 @@ struct HistoryItem: Identifiable, Equatable, Hashable, Codable {
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         result = try container.decode(ScanResult.self, forKey: .result)
         contextTags = try container.decodeIfPresent([String].self, forKey: .contextTags) ?? []
+        isLocalOnly = try container.decodeIfPresent(Bool.self, forKey: .isLocalOnly) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -36,5 +40,6 @@ struct HistoryItem: Identifiable, Equatable, Hashable, Codable {
         if !contextTags.isEmpty {
             try container.encode(contextTags, forKey: .contextTags)
         }
+        try container.encode(isLocalOnly, forKey: .isLocalOnly)
     }
 }

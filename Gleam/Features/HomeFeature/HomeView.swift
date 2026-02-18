@@ -12,6 +12,7 @@ struct HomeView: View {
     @EnvironmentObject private var historyStore: HistoryStore
     @EnvironmentObject private var achievementManager: AchievementManager
     @EnvironmentObject private var brushingHabitStore: BrushingHabitStore
+    @EnvironmentObject private var proAccess: ProAccessProvider
     @AppStorage("userFirstName") private var userFirstName: String = "Andrei"
     @AppStorage("planDisplayMode") private var planDisplayModeRawValue: String = PlanDisplayMode.personalized.rawValue
     @State private var lastResult: ScanResult?
@@ -141,8 +142,9 @@ struct HomeView: View {
         }
         .background(AppBackground())
         .sheet(isPresented: $showCamera) {
-            CameraCaptureView { data in
-                scanSession.capturedImageData = data
+            CameraCaptureView { result in
+                scanSession.capturedImageData = result?.imageData
+                scanSession.capturedTeethMatte = result?.teethMatte
                 showCamera = false
             }
             .accessibilityIdentifier("camera_sheet")
@@ -349,7 +351,7 @@ struct HomeView: View {
 
         var cards: [LearnCard] = []
 
-        if !result.personalTakeaway.isEmpty {
+        if proAccess.isPro, !result.personalTakeaway.isEmpty {
             cards.append(
                 LearnCard(
                     title: "Today's nudge",
@@ -400,7 +402,7 @@ struct HomeView: View {
             LearnCard(
                 title: "How to brush for lasting whiteness",
                 subtitle: "Two minutes, twice a day with micro-circular motions keeps enamel bright.",
-                icon: "toothbrush.fill",
+                icon: "sparkles",
                 gradient: [Color(red: 0.82, green: 0.91, blue: 1.0), Color(red: 0.68, green: 0.81, blue: 1.0)]
             ),
             LearnCard(
@@ -1108,7 +1110,7 @@ private struct ToothButton: View {
     }
 
     private var iconName: String {
-        state == .completed ? "checkmark" : "tooth.fill"
+        state == .completed ? "checkmark" : "sparkles"
     }
 
     private var scale: CGFloat {

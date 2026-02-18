@@ -13,7 +13,7 @@ struct ContentView: View {
     @EnvironmentObject private var historyStore: HistoryStore
     @State private var selectedTab: Int = 0
     @State private var homeNavigationPath: [ScanResult] = []
-    @State private var historyNavigationPath: [ScanResult] = []
+    @State private var historyNavigationPath: [ResultsRoute] = []
     @State private var showOnboarding: Bool = false
     @AppStorage("didCompleteOnboarding") private var didCompleteOnboarding: Bool = false
 
@@ -31,7 +31,11 @@ struct ContentView: View {
             NavigationStack {
                 ScanView { result in
                     // Navigate to History tab and show the result
-                    historyNavigationPath = [result]
+                    let route = ResultsRoute(
+                        result: result,
+                        historyItemId: findHistoryItemId(for: result)
+                    )
+                    historyNavigationPath = [route]
                     selectedTab = 2
                 }
             }
@@ -40,9 +44,8 @@ struct ContentView: View {
 
             NavigationStack(path: $historyNavigationPath) {
                 HistoryView()
-                    .navigationDestination(for: ScanResult.self) { result in
-                        // Find the history item ID for this result
-                        ResultsView(result: result, historyItemId: findHistoryItemId(for: result))
+                    .navigationDestination(for: ResultsRoute.self) { route in
+                        ResultsView(result: route.result, historyItemId: route.historyItemId)
                     }
             }
             .tabItem { Label("History", systemImage: "clock") }

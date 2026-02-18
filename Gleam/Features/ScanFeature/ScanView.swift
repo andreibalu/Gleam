@@ -2,13 +2,16 @@ import SwiftUI
 import PhotosUI
 import UIKit
 import Vision
+import CoreImage
 
 struct ScanView: View {
     @Environment(\.scanRepository) private var scanRepository
     @EnvironmentObject private var scanSession: ScanSession
     @EnvironmentObject private var historyStore: HistoryStore
+    @EnvironmentObject private var proAccess: ProAccessProvider
     @State private var photoItem: PhotosPickerItem? = nil
     @State private var selectedImageData: Data? = nil
+    @State private var teethMatte: CIImage? = nil
     @State private var isAnalyzing = false
     @State private var showCamera = false
     @State private var errorMessage: String? = nil
@@ -75,21 +78,25 @@ struct ScanView: View {
                                 .buttonStyle(FloatingPrimaryButtonStyle())
                                 .accessibilityIdentifier("scan_take_photo_button")
                                 
-                                PhotosPicker(selection: $photoItem, matching: .images) {
-                                    HStack(spacing: 12) {
-                                        Image(systemName: "photo.on.rectangle")
-                                            .font(.title3)
-                                            .fontWeight(.semibold)
-                                        Text("Choose from Library")
-                                            .font(.headline)
-                                            .fontWeight(.semibold)
+                                if proAccess.isPro {
+                                    PhotosPicker(selection: $photoItem, matching: .images) {
+                                        HStack(spacing: 12) {
+                                            Image(systemName: "photo.on.rectangle")
+                                                .font(.title3)
+                                                .fontWeight(.semibold)
+                                            Text("Choose from Library")
+                                                .font(.headline)
+                                                .fontWeight(.semibold)
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 18)
                                     }
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 18)
-                                }
-                                .buttonStyle(FloatingSecondaryButtonStyle())
-                                .onChange(of: photoItem) { _, newItem in
-                                    Task { await loadImage(from: newItem) }
+                                    .buttonStyle(FloatingSecondaryButtonStyle())
+                                    .onChange(of: photoItem) { _, newItem in
+                                        Task { await loadImage(from: newItem) }
+                                    }
+                                } else {
+                                    lockedPrimaryLibraryButton
                                 }
                             }
                         } else {
@@ -115,21 +122,25 @@ struct ScanView: View {
                                         .buttonStyle(FloatingIconButtonStyle())
                                         .accessibilityIdentifier("scan_take_new_photo_button")
                                         
-                                        PhotosPicker(selection: $photoItem, matching: .images) {
-                                            VStack(spacing: 6) {
-                                                Image(systemName: "photo.on.rectangle")
-                                                    .font(.title2)
-                                                    .fontWeight(.medium)
-                                                Text("Choose")
-                                                    .font(.caption)
-                                                    .fontWeight(.medium)
+                                        if proAccess.isPro {
+                                            PhotosPicker(selection: $photoItem, matching: .images) {
+                                                VStack(spacing: 6) {
+                                                    Image(systemName: "photo.on.rectangle")
+                                                        .font(.title2)
+                                                        .fontWeight(.medium)
+                                                    Text("Choose")
+                                                        .font(.caption)
+                                                        .fontWeight(.medium)
+                                                }
+                                                .frame(maxWidth: .infinity)
+                                                .padding(.vertical, 14)
                                             }
-                                            .frame(maxWidth: .infinity)
-                                            .padding(.vertical, 14)
-                                        }
-                                        .buttonStyle(FloatingIconButtonStyle())
-                                        .onChange(of: photoItem) { _, newItem in
-                                            Task { await loadImage(from: newItem) }
+                                            .buttonStyle(FloatingIconButtonStyle())
+                                            .onChange(of: photoItem) { _, newItem in
+                                                Task { await loadImage(from: newItem) }
+                                            }
+                                        } else {
+                                            lockedCompactLibraryButton
                                         }
                                     }
                                 }
@@ -175,14 +186,17 @@ struct ScanView: View {
         .onAppear {
             if let capturedData = scanSession.capturedImageData {
                 selectedImageData = capturedData
+                teethMatte = scanSession.capturedTeethMatte
                 selectedTagIDs.removeAll()
                 scanSession.capturedImageData = nil
+                scanSession.capturedTeethMatte = nil
             }
         }
         .fullScreenCover(isPresented: $showCamera) {
-            CameraCaptureView { data in
-                if let data = data {
-                    selectedImageData = data
+            CameraCaptureView { result in
+                if let result = result {
+                    selectedImageData = result.imageData
+                    teethMatte = result.teethMatte
                     selectedTagIDs.removeAll()
                 }
                 showCamera = false
@@ -211,6 +225,7 @@ struct ScanView: View {
         do {
             if let data = try await item.loadTransferable(type: Data.self) {
                 selectedImageData = compressImageDataIfNeeded(data)
+                teethMatte = nil
                 selectedTagIDs.removeAll()
             }
         } catch { }
@@ -219,7 +234,7 @@ struct ScanView: View {
     @MainActor
     private func analyze() async {
         guard let data = selectedImageData else { return }
-        
+
         // Validate that the image contains a face before proceeding
         let faceValidation = await validateImageContainsFace(imageData: data)
         switch faceValidation {
@@ -236,37 +251,77 @@ struct ScanView: View {
         case .valid:
             break
         }
-        
+
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         isAnalyzing = true
+        let selectedTags = stainTags.filter { selectedTagIDs.contains($0.id) }
+        let capturedMatte = teethMatte
+
         defer {
             isAnalyzing = false
-            // Clear the image after analysis so Scan tab shows placeholder again
             selectedImageData = nil
+            teethMatte = nil
             selectedTagIDs.removeAll()
         }
 
-        let selectedTags = stainTags.filter { selectedTagIDs.contains($0.id) }
-        let tagKeywords = selectedTags.map { $0.promptKeyword }
-        let previousTakeaways = historyStore.items
-            .compactMap { $0.result.personalTakeaway.isEmpty ? nil : $0.result.personalTakeaway }
-            .prefix(5)
-        let recentTagHistory = historyStore.items
-            .prefix(5)
-            .map { $0.contextTags }
+        if let matte = capturedMatte {
+            let localResult = LocalTeethAnalyzer.analyze(imageData: data, teethMatte: matte)
+            let visibleLocalResult = proAccess.isPro ? localResult : resultWithoutPersonalTakeaway(localResult)
+            let outcomeId = UUID().uuidString
+            let localOutcome = AnalyzeOutcome(
+                id: outcomeId,
+                createdAt: Date(),
+                result: visibleLocalResult,
+                contextTags: selectedTags.map { $0.id }
+            )
+
+            historyStore.append(
+                outcome: localOutcome,
+                imageData: data,
+                fallbackContextTags: selectedTags.map { $0.id },
+                isLocalOnly: true
+            )
+            onFinished(visibleLocalResult)
+
+            if proAccess.isPro {
+                let tagKeywords = selectedTags.map { $0.promptKeyword }
+                Task { @MainActor in
+                    let imageToAnalyze = await cropImageToTeethRegion(imageData: data) ?? data
+                    let previousTakeaways = historyStore.items
+                        .compactMap { $0.result.personalTakeaway.isEmpty ? nil : $0.result.personalTakeaway }
+                        .prefix(5)
+                    let recentTagHistory = historyStore.items
+                        .prefix(5)
+                        .map { $0.contextTags }
+
+                    if let gptOutcome = try? await scanRepository.analyze(
+                        imageData: imageToAnalyze,
+                        tags: tagKeywords,
+                        previousTakeaways: Array(previousTakeaways),
+                        recentTagHistory: Array(recentTagHistory)
+                    ) {
+                        historyStore.enrichResult(for: outcomeId, with: gptOutcome.result)
+                    }
+                }
+            }
+            return
+        }
 
         do {
-            // Crop image to teeth region for API call to save tokens
-            // Keep original image for history display
             let imageToAnalyze = await cropImageToTeethRegion(imageData: data) ?? data
-            
-            let outcome = try await scanRepository.analyze(
+            let tagKeywords = selectedTags.map { $0.promptKeyword }
+            let previousTakeaways = historyStore.items
+                .compactMap { $0.result.personalTakeaway.isEmpty ? nil : $0.result.personalTakeaway }
+                .prefix(5)
+            let recentTagHistory = historyStore.items.prefix(5).map { $0.contextTags }
+
+            let remoteOutcome = try await scanRepository.analyze(
                 imageData: imageToAnalyze,
                 tags: tagKeywords,
                 previousTakeaways: Array(previousTakeaways),
                 recentTagHistory: Array(recentTagHistory)
             )
-            // Save result with original image data and tag context
+            let outcome = proAccess.isPro ? remoteOutcome : outcomeWithoutPersonalTakeaway(remoteOutcome)
             historyStore.append(
                 outcome: outcome,
                 imageData: data,
@@ -274,6 +329,28 @@ struct ScanView: View {
             )
             onFinished(outcome.result)
         } catch { }
+    }
+
+    private func resultWithoutPersonalTakeaway(_ result: ScanResult) -> ScanResult {
+        guard !result.personalTakeaway.isEmpty else { return result }
+        return ScanResult(
+            whitenessScore: result.whitenessScore,
+            shade: result.shade,
+            detectedIssues: result.detectedIssues,
+            confidence: result.confidence,
+            referralNeeded: result.referralNeeded,
+            disclaimer: result.disclaimer,
+            personalTakeaway: ""
+        )
+    }
+
+    private func outcomeWithoutPersonalTakeaway(_ outcome: AnalyzeOutcome) -> AnalyzeOutcome {
+        AnalyzeOutcome(
+            id: outcome.id,
+            createdAt: outcome.createdAt,
+            result: resultWithoutPersonalTakeaway(outcome.result),
+            contextTags: outcome.contextTags
+        )
     }
     
     /// Validation result for image face detection
@@ -484,6 +561,48 @@ struct ScanView: View {
                 }
             }
         }
+    }
+
+    private var lockedPrimaryLibraryButton: some View {
+        Button {} label: {
+            HStack(spacing: 12) {
+                Image(systemName: "lock.fill")
+                    .font(.caption)
+                Image(systemName: "photo.on.rectangle")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                Text("Choose from Library")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                Text("PRO")
+                    .font(.caption2.weight(.bold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.accentColor))
+                    .foregroundStyle(.white)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 18)
+        }
+        .buttonStyle(FloatingSecondaryButtonStyle())
+        .disabled(true)
+        .opacity(0.5)
+    }
+
+    private var lockedCompactLibraryButton: some View {
+        Button {} label: {
+            VStack(spacing: 6) {
+                Image(systemName: "lock.fill")
+                    .font(.caption)
+                Text("PRO")
+                    .font(.caption.weight(.semibold))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+        }
+        .buttonStyle(FloatingIconButtonStyle())
+        .disabled(true)
+        .opacity(0.5)
     }
 
     private func compressImageDataIfNeeded(_ data: Data) -> Data? {
