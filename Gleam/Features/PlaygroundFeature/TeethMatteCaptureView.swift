@@ -37,6 +37,7 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
 
     private var sessionConfigured = false
     private var teethMatteSupported = false
+    private let logPrefix = "[TeethPlaygroundCamera]"
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -121,7 +122,6 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
             cancelButton.widthAnchor.constraint(equalToConstant: 34),
             cancelButton.heightAnchor.constraint(equalToConstant: 34),
 
-            matteStatusLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             matteStatusLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
             matteStatusLabel.leadingAnchor.constraint(greaterThanOrEqualTo: cancelButton.trailingAnchor, constant: 8),
             matteStatusLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
@@ -173,6 +173,7 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
                     }
                     return
                 }
+                self.log("selected camera device: \(device.deviceType.rawValue), position: \(device.position.rawValue)")
 
                 let input = try AVCaptureDeviceInput(device: device)
                 guard self.session.canAddInput(input) else {
@@ -192,8 +193,12 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
                     self.photoOutput.isPortraitEffectsMatteDeliveryEnabled = true
                 }
                 self.photoOutput.enabledSemanticSegmentationMatteTypes = self.photoOutput.availableSemanticSegmentationMatteTypes
+                self.log(
+                    "output matte types available: \(self.matteTypesDescription(self.photoOutput.availableSemanticSegmentationMatteTypes)); enabled: \(self.matteTypesDescription(self.photoOutput.enabledSemanticSegmentationMatteTypes))"
+                )
 
                 self.teethMatteSupported = self.photoOutput.availableSemanticSegmentationMatteTypes.contains(.teeth)
+                self.log("teeth matte supported during configure: \(self.teethMatteSupported)")
                 self.sessionConfigured = true
                 self.session.commitConfiguration()
 
@@ -244,11 +249,26 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
 
             let settings = AVCapturePhotoSettings()
             settings.isHighResolutionPhotoEnabled = true
+            if self.photoOutput.isDepthDataDeliveryEnabled {
+                settings.isDepthDataDeliveryEnabled = true
+            }
+            if self.photoOutput.isPortraitEffectsMatteDeliveryEnabled {
+                settings.isPortraitEffectsMatteDeliveryEnabled = true
+            }
+            self.log(
+                "capture settings depthEnabled: \(settings.isDepthDataDeliveryEnabled), portraitMatteEnabled: \(settings.isPortraitEffectsMatteDeliveryEnabled)"
+            )
 
             let matteSupportedNow = self.photoOutput.availableSemanticSegmentationMatteTypes.contains(.teeth)
             self.teethMatteSupported = matteSupportedNow
+            self.log(
+                "capture requested. matte available now: \(self.matteTypesDescription(self.photoOutput.availableSemanticSegmentationMatteTypes)); enabled on output: \(self.matteTypesDescription(self.photoOutput.enabledSemanticSegmentationMatteTypes))"
+            )
             if matteSupportedNow {
                 settings.enabledSemanticSegmentationMatteTypes = [.teeth]
+                self.log("capture settings matte types: \(self.matteTypesDescription(settings.enabledSemanticSegmentationMatteTypes))")
+            } else {
+                self.log("capture settings matte types: none (.teeth unavailable)")
             }
 
             self.photoOutput.capturePhoto(with: settings, delegate: self)
@@ -256,7 +276,8 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
     }
 
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
-        if error != nil {
+        if let error {
+            log("didFinishProcessingPhoto error: \(error.localizedDescription)")
             DispatchQueue.main.async { [weak self] in
                 self?.onError?("Photo capture failed.")
             }
@@ -267,15 +288,22 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
             let data = photo.fileDataRepresentation(),
             let rawImage = UIImage(data: data)
         else {
+            log("didFinishProcessingPhoto invalid data or UIImage decode failed")
             DispatchQueue.main.async { [weak self] in
                 self?.onError?("Captured image data is invalid.")
             }
             return
         }
+        log("didFinishProcessingPhoto image bytes: \(data.count), size: \(rawImage.size.width)x\(rawImage.size.height)")
 
         let normalizedPhoto = TeethPlaygroundImagePipeline.normalizedPhoto(rawImage)
+        log("normalized photo size: \(normalizedPhoto.size.width)x\(normalizedPhoto.size.height)")
         let matteImage = extractTeethMask(from: photo)
+        log("teeth matte image present: \(matteImage != nil)")
         let alignedMask = matteImage.map { TeethPlaygroundImagePipeline.normalizedMask($0, targetSize: normalizedPhoto.size) }
+        if let alignedMask {
+            log("aligned mask size: \(alignedMask.size.width)x\(alignedMask.size.height)")
+        }
 
         let sample = TeethPlaygroundSample(
             photo: normalizedPhoto,
@@ -293,17 +321,56 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
 
     private func extractTeethMask(from photo: AVCapturePhoto) -> UIImage? {
         guard var matte = photo.semanticSegmentationMatte(for: .teeth) else {
+            log("semanticSegmentationMatte(.teeth) returned nil")
             return nil
         }
+        let pixelBuffer = matte.mattingImage
+        log(
+            "semanticSegmentationMatte(.teeth) available. pixelBuffer: \(CVPixelBufferGetWidth(pixelBuffer))x\(CVPixelBufferGetHeight(pixelBuffer)), format: \(CVPixelBufferGetPixelFormatType(pixelBuffer))"
+        )
 
         if
             let exifValue = photo.metadata[String(kCGImagePropertyOrientation)] as? NSNumber,
             let orientation = CGImagePropertyOrientation(rawValue: exifValue.uint32Value)
         {
             matte = matte.applyingExifOrientation(orientation)
+            log("applied matte EXIF orientation: \(orientation.rawValue)")
+        } else {
+            log("no EXIF orientation found for matte")
         }
 
-        return TeethPlaygroundImagePipeline.maskImage(from: matte)
+        let mask = TeethPlaygroundImagePipeline.maskImage(from: matte)
+        log("mask conversion success: \(mask != nil)")
+        return mask
+    }
+
+    func photoOutput(
+        _ output: AVCapturePhotoOutput,
+        didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings,
+        error: Error?
+    ) {
+        if let error {
+            log("didFinishCaptureFor error (uniqueID \(resolvedSettings.uniqueID)): \(error.localizedDescription)")
+        } else {
+            log("didFinishCaptureFor completed (uniqueID \(resolvedSettings.uniqueID))")
+        }
+    }
+
+    private func log(_ message: String) {
+        print("\(logPrefix) \(message)")
+    }
+
+    private func matteTypesDescription(_ types: [AVSemanticSegmentationMatte.MatteType]) -> String {
+        if types.isEmpty {
+            return "[]"
+        }
+        let labels = types.map { type in
+            if type == .teeth { return "teeth" }
+            if type == .skin { return "skin" }
+            if type == .hair { return "hair" }
+            return "unknown(\(type.rawValue))"
+        }
+        return "[\(labels.joined(separator: ", "))]"
     }
 }
 

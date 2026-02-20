@@ -226,18 +226,24 @@ struct ScanView: View {
         case .noFace:
             errorMessage = "No face detected in this photo. Please take a photo that clearly shows a person's face."
             showErrorAlert = true
-            UINotificationFeedbackGenerator().notificationOccurred(.error)
+            let errorGen = UINotificationFeedbackGenerator()
+            errorGen.prepare()
+            errorGen.notificationOccurred(.error)
             return
         case .noSmile:
             errorMessage = "Please smile to show your teeth! We need to see your teeth clearly for the analysis."
             showErrorAlert = true
-            UINotificationFeedbackGenerator().notificationOccurred(.error)
+            let errorGen = UINotificationFeedbackGenerator()
+            errorGen.prepare()
+            errorGen.notificationOccurred(.error)
             return
         case .valid:
             break
         }
         
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        let impactGen = UIImpactFeedbackGenerator(style: .medium)
+        impactGen.prepare()
+        impactGen.impactOccurred()
         isAnalyzing = true
         defer {
             isAnalyzing = false

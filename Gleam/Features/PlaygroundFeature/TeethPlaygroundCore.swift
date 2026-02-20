@@ -133,7 +133,10 @@ enum TeethPlaygroundImagePipeline {
                 0,
                 kCGImageAuxiliaryDataTypeSemanticSegmentationTeethMatte
             ) as? [AnyHashable: Any],
-            var matte = AVSemanticSegmentationMatte(fromDictionaryRepresentation: auxiliaryData)
+            var matte = try? AVSemanticSegmentationMatte(
+                fromImageSourceAuxiliaryDataType: kCGImageAuxiliaryDataTypeSemanticSegmentationTeethMatte,
+                dictionaryRepresentation: auxiliaryData
+            )
         else {
             return nil
         }
@@ -146,12 +149,24 @@ enum TeethPlaygroundImagePipeline {
     }
 
     static func maskImage(from matte: AVSemanticSegmentationMatte) -> UIImage? {
-        let ciImage = CIImage(cvPixelBuffer: matte.mattingImage)
+        let pixelBuffer = matte.mattingImage
+        let width = CVPixelBufferGetWidth(pixelBuffer)
+        let height = CVPixelBufferGetHeight(pixelBuffer)
+        let pixelFormat = CVPixelBufferGetPixelFormatType(pixelBuffer)
+        log("maskImage input buffer: \(width)x\(height), format: \(pixelFormat)")
+
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
         let context = CIContext(options: nil)
         guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
+            log("maskImage failed: CIContext.createCGImage returned nil for extent \(ciImage.extent)")
             return nil
         }
+        log("maskImage conversion success: cgImage \(cgImage.width)x\(cgImage.height)")
         return UIImage(cgImage: cgImage)
+    }
+
+    private static func log(_ message: String) {
+        print("[TeethPlaygroundPipeline] \(message)")
     }
 
     private static func exifOrientation(from source: CGImageSource) -> CGImagePropertyOrientation? {

@@ -400,7 +400,7 @@ struct HomeView: View {
             LearnCard(
                 title: "How to brush for lasting whiteness",
                 subtitle: "Two minutes, twice a day with micro-circular motions keeps enamel bright.",
-                icon: "toothbrush.fill",
+                icon: "paintbrush.fill",
                 gradient: [Color(red: 0.82, green: 0.91, blue: 1.0), Color(red: 0.68, green: 0.81, blue: 1.0)]
             ),
             LearnCard(
@@ -1108,7 +1108,7 @@ private struct ToothButton: View {
     }
 
     private var iconName: String {
-        state == .completed ? "checkmark" : "tooth.fill"
+        state == .completed ? "checkmark" : "sparkles"
     }
 
     private var scale: CGFloat {
@@ -1200,16 +1200,19 @@ private struct BrushingHabitSetupSheet: View {
 private enum BrushingHaptics {
     static func celebrate() {
         let generator = UINotificationFeedbackGenerator()
+        generator.prepare()
         generator.notificationOccurred(.success)
     }
 
     static func warning() {
         let generator = UINotificationFeedbackGenerator()
+        generator.prepare()
         generator.notificationOccurred(.warning)
     }
 
     static func softTap() {
         let generator = UIImpactFeedbackGenerator(style: .soft)
+        generator.prepare()
         generator.impactOccurred()
     }
 }
