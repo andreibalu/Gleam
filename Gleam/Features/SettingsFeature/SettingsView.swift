@@ -29,6 +29,18 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.segmented)
             }
+            Section(header: Text("Playground")) {
+                NavigationLink {
+                    TeethSegmentationPlaygroundView()
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Teeth Segmentation Playground")
+                        Text("Standalone local scan pipeline with AVSemanticSegmentationMatte and no GPT analysis.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
             Section(header: Text("Privacy")) {
                 Link("Privacy Policy", destination: URL(string: "https://gen-lang-client-0740636332.web.app/privacy.html")!)
                 Link("Terms of Service", destination: URL(string: "https://gen-lang-client-0740636332.web.app/terms.html")!)
