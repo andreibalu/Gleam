@@ -98,8 +98,8 @@ struct TeethPlaygroundAnalyzer {
             detectedIssues: issues,
             confidence: confidence,
             referralNeeded: referralNeeded,
-            disclaimer: "Playground estimate generated on-device using AVSemanticSegmentationMatte. This is not a diagnosis.",
-            personalTakeaway: takeaway(for: whitenessScore, issues: issues)
+            disclaimer: "",
+            personalTakeaway: ""
         )
 
         let metrics = TeethPlaygroundMetrics(
@@ -386,7 +386,7 @@ private func detectedIssues(lightness: Double, b: Double, lightnessStdDev: Doubl
             DetectedIssue(
                 key: "surface_staining",
                 severity: "high",
-                notes: "Stronger yellow tones detected; limiting coffee/tea staining can help."
+                notes: ""
             )
         )
     } else if b > 17 {
@@ -394,7 +394,7 @@ private func detectedIssues(lightness: Double, b: Double, lightnessStdDev: Doubl
             DetectedIssue(
                 key: "surface_staining",
                 severity: "medium",
-                notes: "Mild yellow tone detected; consistent brushing and rinsing can improve shade."
+                notes: ""
             )
         )
     }
@@ -404,7 +404,7 @@ private func detectedIssues(lightness: Double, b: Double, lightnessStdDev: Doubl
             DetectedIssue(
                 key: "overall_brightness",
                 severity: lightness < 48 ? "high" : "medium",
-                notes: "Overall brightness appears low in the segmented enamel region."
+                notes: ""
             )
         )
     }
@@ -414,7 +414,7 @@ private func detectedIssues(lightness: Double, b: Double, lightnessStdDev: Doubl
             DetectedIssue(
                 key: "tone_variation",
                 severity: "medium",
-                notes: "Uneven brightness detected across teeth, which can indicate patchy staining."
+                notes: ""
             )
         )
     }
@@ -424,31 +424,12 @@ private func detectedIssues(lightness: Double, b: Double, lightnessStdDev: Doubl
             DetectedIssue(
                 key: "capture_quality",
                 severity: "low",
-                notes: "Limited teeth area was segmented; retake with stronger lighting and a wider smile."
+                notes: ""
             )
         )
     }
 
     return issues
-}
-
-private func takeaway(for score: Int, issues: [DetectedIssue]) -> String {
-    if score >= 82 {
-        return "Strong brightness and low stain signal. Maintain with hydration and low-pigment rinses after dark drinks."
-    }
-
-    if score >= 65 {
-        if issues.contains(where: { $0.key == "surface_staining" }) {
-            return "Good base shade with moderate stain tint. Focus on post-coffee rinsing and nightly flossing for steady gains."
-        }
-        return "You're in a healthy mid-to-bright zone. Keep routine consistency to preserve shade."
-    }
-
-    if issues.contains(where: { $0.key == "capture_quality" }) {
-        return "Retake the photo with brighter frontal light and a wider smile to improve measurement reliability."
-    }
-
-    return "Lower brightness detected in this pass. Prioritize stain-control habits and consider discussing whitening options with your dentist."
 }
 
 private func rgbToLab(r: Double, g: Double, b: Double) -> (l: Double, a: Double, bValue: Double) {
