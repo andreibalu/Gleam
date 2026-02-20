@@ -141,8 +141,9 @@ struct HomeView: View {
         }
         .background(AppBackground())
         .sheet(isPresented: $showCamera) {
-            CameraCaptureView { data in
-                scanSession.capturedImageData = data
+            CameraCaptureView { result in
+                scanSession.capturedImageData = result?.imageData
+                scanSession.capturedTeethMatte = result?.teethMatte
                 showCamera = false
             }
             .accessibilityIdentifier("camera_sheet")

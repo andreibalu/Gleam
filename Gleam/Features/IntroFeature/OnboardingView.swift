@@ -42,9 +42,9 @@ struct OnboardingView: View {
             .padding(.bottom, AppSpacing.l)
         }
         .sheet(isPresented: $showCamera) {
-            CameraCaptureView { data in
-                if let data {
-                    capturedImageData = data
+            CameraCaptureView { result in
+                if let result {
+                    capturedImageData = result.imageData
                     step = .preview
                 } else {
                     step = .intro

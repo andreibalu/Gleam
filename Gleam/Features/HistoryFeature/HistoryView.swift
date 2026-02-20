@@ -284,6 +284,7 @@ private enum AverageMode: CaseIterable {
 private struct HistoryCardView: View {
     let item: HistoryItem
     let historyStore: HistoryStore
+    @EnvironmentObject private var proAccess: ProAccessProvider
     @State private var imageData: Data? = nil
     
     private var formattedDate: String {
@@ -364,6 +365,19 @@ private struct HistoryCardView: View {
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if item.isLocalOnly && !proAccess.isPro {
+                HStack(spacing: 6) {
+                    Image(systemName: "lock.fill")
+                        .font(.caption2)
+                    Text("Upgrade for full analysis")
+                        .font(.caption)
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(Color(.tertiarySystemBackground)))
             }
         }
         .padding()

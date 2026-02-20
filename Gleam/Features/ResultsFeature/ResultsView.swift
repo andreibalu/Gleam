@@ -5,17 +5,13 @@ struct ResultsView: View {
     let result: ScanResult
     let historyItemId: String?
     @EnvironmentObject private var historyStore: HistoryStore
+    @EnvironmentObject private var proAccess: ProAccessProvider
     @State private var imageData: Data? = nil
     @State private var currentPage: Int = 0
-    
+
     init(result: ScanResult, historyItemId: String? = nil) {
         self.result = result
         self.historyItemId = historyItemId
-    }
-
-    private var contextTagTitles: [String] {
-        guard let tags = matchedHistoryItem?.contextTags else { return [] }
-        return tags.compactMap { StainTag.title(for: $0) }
     }
 
     private var matchedHistoryItem: HistoryItem? {
@@ -26,11 +22,24 @@ struct ResultsView: View {
         return historyStore.items.first(where: { $0.result == result })
     }
 
+    private var displayResult: ScanResult {
+        matchedHistoryItem?.result ?? result
+    }
+
+    private var isLocalOnly: Bool {
+        matchedHistoryItem?.isLocalOnly ?? false
+    }
+
+    private var contextTagTitles: [String] {
+        guard let tags = matchedHistoryItem?.contextTags else { return [] }
+        return tags.compactMap { StainTag.title(for: $0) }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppSpacing.l) {
                 SwipeableScoreArea(
-                    score: normalizedScore(result.whitenessScore),
+                    score: normalizedScore(displayResult.whitenessScore),
                     imageData: imageData,
                     currentPage: $currentPage
                 )
@@ -41,27 +50,41 @@ struct ResultsView: View {
                 }
 
                 ResultHeadlineCard(
-                    takeaway: result.personalTakeaway,
-                    referralNeeded: result.referralNeeded
+                    takeaway: displayResult.personalTakeaway,
+                    referralNeeded: displayResult.referralNeeded
                 )
 
                 ShadeConfidenceCard(
-                    shadeCode: result.shade,
+                    shadeCode: displayResult.shade,
                     shadeDescription: shadeDescription,
-                    confidence: result.confidence
+                    confidence: displayResult.confidence
                 )
 
-                if !result.detectedIssues.isEmpty {
-                    DetectedIssuesSection(issues: result.detectedIssues)
+                if !displayResult.detectedIssues.isEmpty {
+                    DetectedIssuesSection(issues: displayResult.detectedIssues)
+                } else if isLocalOnly {
+                    if proAccess.isPro {
+                        LockedInsightCard(
+                            title: "Focus Areas",
+                            icon: "exclamationmark.triangle.fill",
+                            isLoading: true
+                        )
+                    } else {
+                        LockedInsightCard(
+                            title: "Focus Areas",
+                            icon: "exclamationmark.triangle.fill",
+                            isLoading: false
+                        )
+                    }
                 }
 
-                ShareLink(item: shareText(for: result)) {
+                ShareLink(item: shareText(for: displayResult)) {
                     Label("Share Summary", systemImage: "square.and.arrow.up")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(PrimaryButtonStyle())
 
-                Text(result.disclaimer)
+                Text(displayResult.disclaimer)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .padding(.bottom, AppSpacing.l)
@@ -71,31 +94,27 @@ struct ResultsView: View {
         .navigationTitle("Results")
         .background(AppBackground())
         .task {
-            // Load image if historyItemId is available
-            if let historyItemId = historyItemId {
+            if let historyItemId {
                 imageData = await historyStore.loadImage(for: historyItemId)
             }
         }
         .onChange(of: imageData) { _, _ in
-            // Reset to score ring when image loads
             currentPage = 0
         }
     }
-    
+
     private func normalizedScore(_ rawScore: Int) -> Double {
-        // Convert 0-100 to 0-10 scale
-        return Double(rawScore) / 10.0
+        Double(rawScore) / 10.0
     }
-    
+
     private var shadeDescription: String {
-        // Simplified shade description
         let shadeMap: [String: String] = [
             "A1": "Very Light", "A2": "Light", "A3": "Medium-Light",
             "B1": "Light", "B2": "Medium-Light", "B3": "Medium",
             "C1": "Light", "C2": "Medium", "C3": "Medium-Dark",
-            "D2": "Medium", "D3": "Medium-Dark", "D4": "Dark"
+            "D2": "Medium", "D3": "Medium-Dark", "D4": "Dark",
         ]
-        return shadeMap[result.shade] ?? result.shade
+        return shadeMap[displayResult.shade] ?? displayResult.shade
     }
 }
 
@@ -493,6 +512,39 @@ private struct IssueCard: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(Color(.secondarySystemBackground))
         )
+    }
+}
+
+private struct LockedInsightCard: View {
+    let title: String
+    let icon: String
+    let isLoading: Bool
+
+    var body: some View {
+        InsightCard(title: title, icon: icon) {
+            if isLoading {
+                HStack(spacing: 12) {
+                    ProgressView()
+                    Text("Analyzing with AI...")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, AppSpacing.m)
+            } else {
+                VStack(spacing: AppSpacing.s) {
+                    Image(systemName: "lock.fill")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                    Text("Upgrade to Pro for detailed issue detection and personalized coaching")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, AppSpacing.m)
+            }
+        }
     }
 }
 

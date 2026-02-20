@@ -16,6 +16,7 @@ struct GleamApp: App {
     @StateObject private var historyStore: HistoryStore
     @StateObject private var achievementManager: AchievementManager
     @StateObject private var brushingHabitStore: BrushingHabitStore
+    @StateObject private var proAccessProvider = ProAccessProvider()
     private let authRepository: any AuthRepository
     private let scanRepository: any ScanRepository
 
@@ -75,6 +76,7 @@ struct GleamApp: App {
                 .environmentObject(historyStore)
                 .environmentObject(achievementManager)
                 .environmentObject(brushingHabitStore)
+                .environmentObject(proAccessProvider)
         }
         .modelContainer(sharedModelContainer)
     }
