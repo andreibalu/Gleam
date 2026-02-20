@@ -242,7 +242,7 @@ private func rasterizedRGBA(from image: UIImage) -> RGBAImage? {
         bitsPerComponent: 8,
         bytesPerRow: width * 4,
         space: colorSpace,
-        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
     ) else {
         return nil
     }
