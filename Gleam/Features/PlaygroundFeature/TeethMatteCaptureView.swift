@@ -34,14 +34,30 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
     private let matteStatusLabel = UILabel()
     private let captureButton = UIButton(type: .system)
     private let cancelButton = UIButton(type: .system)
+    private let flashAssistLabel = UILabel()
+    private let flashAssistSwitch = UISwitch()
+    private let flashAssistRow = UIStackView()
+    private let flashOverlay = UIView()
 
     private var sessionConfigured = false
     private var teethMatteSupported = false
+    private var frontCameraDevice: AVCaptureDevice?
+    private var screenFlashEnabled = true
+    private var lastLowLightDetected = false
+    private var lastScreenFlashFired = false
+    private var flashInFlight = false
+    private var storedScreenBrightness: CGFloat?
     private let logPrefix = "[TeethPlaygroundCamera]"
+
+    private struct MaskSanity {
+        let hardCoverage: Double
+        let weightedCoverage: Double
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         configureUI()
+        observeLifecycleEvents()
         requestPermissionAndConfigureSession()
     }
 
@@ -53,6 +69,11 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         stopSession()
+        restoreScreenBrightnessIfNeeded()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     override func viewDidLayoutSubviews() {
@@ -109,12 +130,37 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
         captureButton.layer.zPosition = 2
         view.addSubview(captureButton)
 
+        flashAssistLabel.translatesAutoresizingMaskIntoConstraints = false
+        flashAssistLabel.textColor = .white
+        flashAssistLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        flashAssistLabel.text = "Lighting assist"
+
+        flashAssistSwitch.translatesAutoresizingMaskIntoConstraints = false
+        flashAssistSwitch.isOn = screenFlashEnabled
+        flashAssistSwitch.addTarget(self, action: #selector(flashAssistChanged), for: .valueChanged)
+
+        flashAssistRow.translatesAutoresizingMaskIntoConstraints = false
+        flashAssistRow.axis = .horizontal
+        flashAssistRow.alignment = .center
+        flashAssistRow.spacing = 8
+        flashAssistRow.addArrangedSubview(flashAssistLabel)
+        flashAssistRow.addArrangedSubview(flashAssistSwitch)
+        flashAssistRow.layer.zPosition = 2
+        view.addSubview(flashAssistRow)
+
         cancelButton.translatesAutoresizingMaskIntoConstraints = false
         cancelButton.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
         cancelButton.tintColor = .white
         cancelButton.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
         cancelButton.layer.zPosition = 2
         view.addSubview(cancelButton)
+
+        flashOverlay.translatesAutoresizingMaskIntoConstraints = false
+        flashOverlay.backgroundColor = .white
+        flashOverlay.alpha = 0
+        flashOverlay.isUserInteractionEnabled = false
+        flashOverlay.layer.zPosition = 1.5
+        previewContainer.addSubview(flashOverlay)
 
         NSLayoutConstraint.activate([
             cancelButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
@@ -127,7 +173,15 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
             matteStatusLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
 
             captureButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            captureButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -24)
+            captureButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -24),
+
+            flashAssistRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            flashAssistRow.bottomAnchor.constraint(equalTo: captureButton.topAnchor, constant: -12),
+
+            flashOverlay.leadingAnchor.constraint(equalTo: previewContainer.leadingAnchor),
+            flashOverlay.trailingAnchor.constraint(equalTo: previewContainer.trailingAnchor),
+            flashOverlay.topAnchor.constraint(equalTo: previewContainer.topAnchor),
+            flashOverlay.bottomAnchor.constraint(equalTo: previewContainer.bottomAnchor)
         ])
     }
 
@@ -153,6 +207,20 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
         }
     }
 
+    private func observeLifecycleEvents() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppWillResignActive),
+            name: UIApplication.willResignActiveNotification,
+            object: nil
+        )
+    }
+
+    @objc
+    private func handleAppWillResignActive() {
+        restoreScreenBrightnessIfNeeded()
+    }
+
     private func configureSession() {
         sessionQueue.async { [weak self] in
             guard let self else { return }
@@ -174,6 +242,7 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
                     return
                 }
                 self.log("selected camera device: \(device.deviceType.rawValue), position: \(device.position.rawValue)")
+                self.frontCameraDevice = device
 
                 let input = try AVCaptureDeviceInput(device: device)
                 guard self.session.canAddInput(input) else {
@@ -203,6 +272,7 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
                 self.session.commitConfiguration()
 
                 DispatchQueue.main.async {
+                    self.updateFlashAssistStatusLabel(lowLight: false)
                     self.matteStatusLabel.text = self.teethMatteSupported
                         ? "Teeth matte ready (AVSemanticSegmentationMatte)"
                         : "This camera cannot return teeth matte. You can still capture for preview."
@@ -238,7 +308,14 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
 
     @objc
     private func cancelTapped() {
+        restoreScreenBrightnessIfNeeded()
         onCancel?()
+    }
+
+    @objc
+    private func flashAssistChanged() {
+        screenFlashEnabled = flashAssistSwitch.isOn
+        updateFlashAssistStatusLabel(lowLight: lastLowLightDetected)
     }
 
     @objc
@@ -246,6 +323,17 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
         sessionQueue.async { [weak self] in
             guard let self else { return }
             guard self.sessionConfigured else { return }
+            let lowLightDetected = self.detectLowLight()
+            self.lastLowLightDetected = lowLightDetected
+            let shouldFlash = self.shouldFireScreenFlash(lowLightDetected: lowLightDetected)
+            self.lastScreenFlashFired = shouldFlash
+
+            DispatchQueue.main.async {
+                self.updateFlashAssistStatusLabel(lowLight: lowLightDetected)
+            }
+            if shouldFlash {
+                self.triggerScreenFlash()
+            }
 
             let settings = AVCapturePhotoSettings()
             settings.isHighResolutionPhotoEnabled = true
@@ -301,21 +389,46 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
         let matteImage = extractTeethMask(from: photo)
         log("teeth matte image present: \(matteImage != nil)")
         let alignedMask = matteImage.map { TeethPlaygroundImagePipeline.normalizedMask($0, targetSize: normalizedPhoto.size) }
+        let maskSanity = alignedMask.flatMap(maskSanityMetrics)
         if let alignedMask {
             log("aligned mask size: \(alignedMask.size.width)x\(alignedMask.size.height)")
+        }
+        if let maskSanity {
+            log(
+                "mask sanity hardCoverage: \(String(format: "%.4f", maskSanity.hardCoverage)), weightedCoverage: \(String(format: "%.4f", maskSanity.weightedCoverage))"
+            )
+        }
+
+        let weakMatte = (maskSanity?.hardCoverage ?? 0) < 0.0025 || (maskSanity?.weightedCoverage ?? 0) < 0.003
+        let sourceDescription: String
+        if alignedMask == nil {
+            sourceDescription = "Playground camera (no teeth matte returned)"
+        } else if weakMatte {
+            sourceDescription = "Playground camera (teeth matte detected but weak coverage)"
+        } else {
+            sourceDescription = "Playground camera (AVSemanticSegmentationMatte teeth)"
         }
 
         let sample = TeethPlaygroundSample(
             photo: normalizedPhoto,
             teethMask: alignedMask,
-            sourceDescription: alignedMask == nil
-                ? "Playground camera (no teeth matte returned)"
-                : "Playground camera (AVSemanticSegmentationMatte teeth)",
-            hasSemanticTeethMatte: alignedMask != nil
+            sourceDescription: sourceDescription,
+                hasSemanticTeethMatte: alignedMask != nil,
+                captureContext: TeethPlaygroundCaptureContext(
+                    source: .camera,
+                    lowLightDetected: lastLowLightDetected,
+                    lightingAssistEnabled: screenFlashEnabled,
+                    lightingAssistUsed: lastScreenFlashFired,
+                    screenFlashFired: lastScreenFlashFired
+                )
         )
 
         DispatchQueue.main.async { [weak self] in
+            if weakMatte {
+                self?.matteStatusLabel.text = "Teeth matte returned, but coverage is weak. Retake with brighter light."
+            }
             self?.onCapture?(sample)
+            self?.restoreScreenBrightnessIfNeeded()
         }
     }
 
@@ -358,6 +471,118 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
 
     private func log(_ message: String) {
         print("\(logPrefix) \(message)")
+    }
+
+    private func detectLowLight() -> Bool {
+        guard let device = frontCameraDevice else { return false }
+        do {
+            try device.lockForConfiguration()
+            let offset = device.exposureTargetOffset
+            let isoRatio = device.iso / max(device.activeFormat.minISO, 1)
+            device.unlockForConfiguration()
+            return offset < -0.8 || isoRatio > 2.2
+        } catch {
+            log("low-light check failed: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private func shouldFireScreenFlash(lowLightDetected: Bool) -> Bool {
+        guard screenFlashEnabled else { return false }
+        guard !UIAccessibility.isReduceMotionEnabled else { return false }
+        return lowLightDetected
+    }
+
+    private func triggerScreenFlash() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            guard !self.flashInFlight else { return }
+            self.flashInFlight = true
+
+            let original = UIScreen.main.brightness
+            self.storedScreenBrightness = original
+            UIScreen.main.brightness = min(1.0, max(original, 0.85))
+
+            UIView.animate(withDuration: 0.05, delay: 0, options: [.curveEaseOut]) {
+                self.flashOverlay.alpha = 0.96
+            } completion: { _ in
+                UIView.animate(withDuration: 0.10, delay: 0, options: [.curveEaseIn]) {
+                    self.flashOverlay.alpha = 0
+                } completion: { _ in
+                    self.flashInFlight = false
+                }
+            }
+        }
+    }
+
+    private func restoreScreenBrightnessIfNeeded() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            guard let stored = self.storedScreenBrightness else { return }
+            self.storedScreenBrightness = nil
+            UIScreen.main.brightness = stored
+        }
+    }
+
+    private func updateFlashAssistStatusLabel(lowLight: Bool) {
+        let status: String
+        if !screenFlashEnabled {
+            status = "Lighting assist off"
+        } else if lowLight {
+            status = "Lighting assist auto-ready (low light)"
+        } else {
+            status = "Lighting assist on"
+        }
+        flashAssistLabel.text = status
+    }
+
+    private func maskSanityMetrics(_ image: UIImage) -> MaskSanity? {
+        guard let raster = rasterizedMaskRGBA(from: image) else { return nil }
+        let totalPixels = raster.width * raster.height
+        guard totalPixels > 0 else { return nil }
+
+        var hardCount = 0
+        var weightSum = 0.0
+        for pixel in 0..<totalPixels {
+            let offset = pixel * 4
+            let matte = Double(raster.bytes[offset]) / 255.0
+            if matte > 0.35 {
+                hardCount += 1
+            }
+            if matte > 0.12 {
+                weightSum += matte
+            }
+        }
+
+        return MaskSanity(
+            hardCoverage: Double(hardCount) / Double(totalPixels),
+            weightedCoverage: weightSum / Double(totalPixels)
+        )
+    }
+
+    private func rasterizedMaskRGBA(from image: UIImage) -> (bytes: [UInt8], width: Int, height: Int)? {
+        guard let cgImage = image.cgImage else { return nil }
+
+        let width = cgImage.width
+        let height = cgImage.height
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+
+        guard let context = CGContext(
+            data: &bytes,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+        ) else {
+            return nil
+        }
+
+        context.interpolationQuality = .high
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return (bytes, width, height)
     }
 
     private func matteTypesDescription(_ types: [AVSemanticSegmentationMatte.MatteType]) -> String {

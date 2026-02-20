@@ -137,6 +137,17 @@ struct TeethSegmentationPlaygroundView: View {
                         .background((sample.hasSemanticTeethMatte ? Color.green : Color.orange).opacity(0.15))
                         .clipShape(Capsule())
                 }
+
+                HStack(spacing: AppSpacing.s) {
+                    Text(sample.captureContext.lowLightDetected ? "Low light detected" : "Lighting stable")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(sample.captureContext.lowLightDetected ? .orange : .green)
+                    if sample.captureContext.lightingAssistEnabled {
+                        Text(sample.captureContext.lightingAssistUsed ? "Lighting assist fired" : "Lighting assist enabled")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
             .padding()
             .background(
@@ -207,12 +218,31 @@ struct TeethSegmentationPlaygroundView: View {
                 Text("Technical metrics")
                     .font(.subheadline.weight(.semibold))
                 metricRow("Teeth coverage", value: String(format: "%.2f%%", analysis.metrics.maskCoverage * 100))
+                metricRow("Weighted coverage", value: String(format: "%.2f%%", analysis.metrics.weightedCoverage * 100))
                 metricRow("Segmented pixels", value: "\(analysis.metrics.segmentedPixelCount)")
+                metricRow("Core pixels", value: "\(analysis.metrics.corePixelCount)")
                 metricRow("L* (lightness)", value: String(format: "%.2f", analysis.metrics.averageLightness))
                 metricRow("a* (green-red)", value: String(format: "%.2f", analysis.metrics.averageA))
                 metricRow("b* (blue-yellow)", value: String(format: "%.2f", analysis.metrics.averageB))
                 metricRow("Lightness std dev", value: String(format: "%.2f", analysis.metrics.lightnessStdDev))
                 metricRow("Uniformity", value: String(format: "%.2f", analysis.metrics.uniformity))
+                metricRow("Shade distance", value: String(format: "%.2f", analysis.metrics.shadeDistance))
+            }
+
+            VStack(alignment: .leading, spacing: AppSpacing.s) {
+                Text("Confidence diagnostics")
+                    .font(.subheadline.weight(.semibold))
+                metricRow("Shade match", value: String(format: "%.0f%%", analysis.metrics.shadeConfidence * 100))
+                metricRow("Coverage quality", value: String(format: "%.0f%%", analysis.metrics.coverageConfidence * 100))
+                metricRow("Uniformity quality", value: String(format: "%.0f%%", analysis.metrics.uniformityConfidence * 100))
+                metricRow("Sample size quality", value: String(format: "%.0f%%", analysis.metrics.sampleSizeConfidence * 100))
+                metricRow("Illumination reference", value: String(format: "%.0f%%", analysis.metrics.illuminationReferenceConfidence * 100))
+                metricRow("Sclera reference", value: analysis.metrics.scleraReferenceDetected ? "Detected (\(analysis.metrics.scleraPixelCount) px)" : "Unavailable")
+                metricRow("Low-light flag", value: analysis.metrics.lowLightDetected ? "Yes" : "No")
+                metricRow("Lighting assist", value: analysis.metrics.lightingAssistEnabled ? (analysis.metrics.lightingAssistUsed ? "Enabled + fired" : "Enabled") : "Off")
+                if !analysis.metrics.qualityFlags.isEmpty {
+                    metricRow("Quality flags", value: analysis.metrics.qualityFlags.joined(separator: ", "))
+                }
             }
 
             if !analysis.result.detectedIssues.isEmpty {
@@ -327,7 +357,14 @@ struct TeethSegmentationPlaygroundView: View {
                     sourceDescription: alignedMask == nil
                         ? "Photo library (no embedded teeth matte)"
                         : "Photo library (embedded AVSemanticSegmentationMatte teeth)",
-                    hasSemanticTeethMatte: alignedMask != nil
+                    hasSemanticTeethMatte: alignedMask != nil,
+                    captureContext: TeethPlaygroundCaptureContext(
+                        source: .library,
+                        lowLightDetected: false,
+                        lightingAssistEnabled: false,
+                        lightingAssistUsed: false,
+                        screenFlashFired: false
+                    )
                 )
                 analysis = nil
             }
