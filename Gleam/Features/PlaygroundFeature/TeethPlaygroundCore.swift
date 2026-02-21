@@ -3,7 +3,6 @@ import CoreImage
 import Foundation
 import ImageIO
 import UIKit
-import Vision
 
 enum TeethPlaygroundSampleSource: String {
     case camera
@@ -37,13 +36,10 @@ struct TeethPlaygroundMetrics {
     let lightnessStdDev: Double
     let uniformity: Double
     let shadeDistance: Double
-    let shadeConfidence: Double
-    let coverageConfidence: Double
-    let uniformityConfidence: Double
-    let sampleSizeConfidence: Double
-    let illuminationReferenceConfidence: Double
-    let scleraReferenceDetected: Bool
-    let scleraPixelCount: Int
+    let teethSignalQuality: Double
+    let lightingQuality: Double
+    let confidenceBase: Double
+    let limitingFactor: String
     let lowLightDetected: Bool
     let lightingAssistEnabled: Bool
     let lightingAssistUsed: Bool
@@ -102,16 +98,6 @@ struct TeethPlaygroundAnalyzer {
             throw TeethPlaygroundAnalysisError.insufficientTeethPixels
         }
 
-        let scleraReference = extractScleraReference(from: normalizedPhoto)
-        let illuminationReferenceConfidence = illuminationReferenceConfidence(
-            from: scleraReference,
-            lowLightDetected: sample.captureContext.lowLightDetected
-        )
-        let lightingStabilityPenalty = lightingStabilityPenalty(
-            reference: scleraReference,
-            lowLightDetected: sample.captureContext.lowLightDetected
-        )
-
         let nearestShade = nearestShadeForLab(l: stats.meanL, a: stats.meanA, b: stats.meanB)
         let whitenessScore = calculateWhitenessScore(
             lightness: stats.meanL,
@@ -120,28 +106,24 @@ struct TeethPlaygroundAnalyzer {
             uniformity: stats.uniformity
         )
         var confidence = calculateConfidence(
+            stats: stats,
             shadeDistance: nearestShade.distance,
-            maskCoverage: stats.coverage,
-            lightnessStdDev: stats.stdL,
-            segmentedPixelCount: stats.segmentedPixelCount,
-            corePixelCount: stats.corePixelCount,
-            illuminationReferenceConfidence: illuminationReferenceConfidence,
-            lightingStabilityPenalty: lightingStabilityPenalty
+            lowLightDetected: sample.captureContext.lowLightDetected,
+            lightingAssistUsed: sample.captureContext.lightingAssistUsed
         )
         let qualityFlags = captureQualityFlags(
             stats: stats,
             confidence: confidence.value,
             lowLightDetected: sample.captureContext.lowLightDetected,
-            illuminationReferenceConfidence: illuminationReferenceConfidence
+            limitingFactor: confidence.limitingFactor
         )
         if qualityFlags.contains("low_coverage") || qualityFlags.contains("high_variance") {
             confidence = ConfidenceBreakdown(
+                base: confidence.base,
                 value: min(confidence.value, 0.58),
-                shade: confidence.shade,
-                coverage: confidence.coverage,
-                uniformity: confidence.uniformity,
-                sampleSize: confidence.sampleSize,
-                illumination: confidence.illumination
+                teethSignal: confidence.teethSignal,
+                lightingQuality: confidence.lightingQuality,
+                limitingFactor: confidence.limitingFactor
             )
         }
         let issues = detectedIssues(
@@ -151,8 +133,17 @@ struct TeethPlaygroundAnalyzer {
             maskCoverage: stats.coverage
         )
         let referralNeeded = issues.contains(where: { $0.severity == "high" }) || whitenessScore < 35
-        let disclaimer = buildDisclaimer(confidence: confidence.value, flags: qualityFlags)
-        let takeaway = buildTakeaway(score: whitenessScore, issues: issues, confidence: confidence.value)
+        let disclaimer = buildDisclaimer(
+            confidence: confidence.value,
+            flags: qualityFlags,
+            limitingFactor: confidence.limitingFactor
+        )
+        let takeaway = buildTakeaway(
+            score: whitenessScore,
+            issues: issues,
+            confidence: confidence.value,
+            limitingFactor: confidence.limitingFactor
+        )
 
         let result = ScanResult(
             whitenessScore: whitenessScore,
@@ -175,13 +166,10 @@ struct TeethPlaygroundAnalyzer {
             lightnessStdDev: stats.stdL,
             uniformity: stats.uniformity,
             shadeDistance: nearestShade.distance,
-            shadeConfidence: confidence.shade,
-            coverageConfidence: confidence.coverage,
-            uniformityConfidence: confidence.uniformity,
-            sampleSizeConfidence: confidence.sampleSize,
-            illuminationReferenceConfidence: confidence.illumination,
-            scleraReferenceDetected: scleraReference != nil,
-            scleraPixelCount: scleraReference?.pixelCount ?? 0,
+            teethSignalQuality: confidence.teethSignal,
+            lightingQuality: confidence.lightingQuality,
+            confidenceBase: confidence.base,
+            limitingFactor: confidence.limitingFactor,
             lowLightDetected: sample.captureContext.lowLightDetected,
             lightingAssistEnabled: sample.captureContext.lightingAssistEnabled,
             lightingAssistUsed: sample.captureContext.lightingAssistUsed,
@@ -189,11 +177,33 @@ struct TeethPlaygroundAnalyzer {
             qualityFlags: qualityFlags
         )
 
+        logAnalysisSummary(sample: sample, result: result, metrics: metrics)
         return TeethPlaygroundAnalysis(result: result, metrics: metrics)
+    }
+
+    private func logAnalysisSummary(
+        sample: TeethPlaygroundSample,
+        result: ScanResult,
+        metrics: TeethPlaygroundMetrics
+    ) {
+        let flags = metrics.qualityFlags.isEmpty ? "none" : metrics.qualityFlags.joined(separator: "|")
+        print(
+            "[TeethPlaygroundAnalysis] source=\(sample.captureContext.source.rawValue) confidence=\(Int((result.confidence * 100).rounded())) whiteness=\(result.whitenessScore) shade=\(result.shade) ts=\(Int((metrics.teethSignalQuality * 100).rounded())) lq=\(Int((metrics.lightingQuality * 100).rounded())) lowLight=\(yesNo(metrics.lowLightDetected)) assistEnabled=\(yesNo(metrics.lightingAssistEnabled)) assistFired=\(yesNo(metrics.lightingAssistUsed)) coverage=\(fmt(metrics.maskCoverage)) weightedCoverage=\(fmt(metrics.weightedCoverage)) segmented=\(metrics.segmentedPixelCount) core=\(metrics.corePixelCount) L=\(fmt(metrics.averageLightness)) stdL=\(fmt(metrics.lightnessStdDev)) shadeDistance=\(fmt(metrics.shadeDistance)) limiting=\(metrics.limitingFactor) flags=\(flags)"
+        )
+    }
+
+    private func yesNo(_ value: Bool) -> String {
+        value ? "yes" : "no"
+    }
+
+    private func fmt(_ value: Double) -> String {
+        String(format: "%.4f", value)
     }
 }
 
 enum TeethPlaygroundImagePipeline {
+    private static let verbosePipelineLogsEnabled = false
+
     static func normalizedPhoto(_ image: UIImage, maxDimension: CGFloat = 1024) -> UIImage {
         normalize(image, maxDimension: maxDimension, opaque: true)
     }
@@ -243,6 +253,7 @@ enum TeethPlaygroundImagePipeline {
     }
 
     private static func log(_ message: String) {
+        guard verbosePipelineLogsEnabled else { return }
         print("[TeethPlaygroundPipeline] \(message)")
     }
 
@@ -322,20 +333,11 @@ private struct LabStats {
 }
 
 private struct ConfidenceBreakdown {
+    let base: Double
     let value: Double
-    let shade: Double
-    let coverage: Double
-    let uniformity: Double
-    let sampleSize: Double
-    let illumination: Double
-}
-
-private struct ScleraReference {
-    let meanL: Double
-    let meanA: Double
-    let meanB: Double
-    let pixelCount: Int
-    let reliability: Double
+    let teethSignal: Double
+    let lightingQuality: Double
+    let limitingFactor: String
 }
 
 private func rasterizedRGBA(from image: UIImage) -> RGBAImage? {
@@ -450,39 +452,71 @@ private func calculateWhitenessScore(lightness: Double, a: Double, b: Double, un
 }
 
 private func calculateConfidence(
+    stats: LabStats,
     shadeDistance: Double,
-    maskCoverage: Double,
-    lightnessStdDev: Double,
-    segmentedPixelCount: Int,
-    corePixelCount: Int,
-    illuminationReferenceConfidence: Double,
-    lightingStabilityPenalty: Double
+    lowLightDetected: Bool,
+    lightingAssistUsed: Bool
 ) -> ConfidenceBreakdown {
-    let shadeConfidence = clamp(1 - shadeDistance / 26, minValue: 0, maxValue: 1)
-    let coverageConfidence = clamp((maskCoverage - 0.003) / 0.015, minValue: 0, maxValue: 1)
-    let uniformityConfidence = clamp(1 - (lightnessStdDev / 22.0), minValue: 0, maxValue: 1)
-    let coreQuality = clamp((Double(corePixelCount) - 320) / 850, minValue: 0, maxValue: 1)
-    let segmentedQuality = clamp((Double(segmentedPixelCount) - 500) / 1600, minValue: 0, maxValue: 1)
-    let sampleSizeConfidence = 0.55 * coreQuality + 0.45 * segmentedQuality
-
-    let base = (0.30 * shadeConfidence)
-        + (0.24 * coverageConfidence)
-        + (0.18 * uniformityConfidence)
-        + (0.14 * sampleSizeConfidence)
-        + (0.14 * illuminationReferenceConfidence)
-    let instabilityPenalty = lightnessStdDev > 20 ? 0.08 : 0
-    let lightingPenalty = clamp(lightingStabilityPenalty, minValue: 0, maxValue: 0.12)
-    let qualityFloor = 0.12 + (0.18 * min(coverageConfidence, sampleSizeConfidence))
-    let confidence = clamp(max(base - instabilityPenalty - lightingPenalty, qualityFloor), minValue: 0.12, maxValue: 0.96)
+    let teethSignal = teethSignalQuality(stats: stats, shadeDistance: shadeDistance)
+    let lightingQuality = lightingQualityScore(
+        stats: stats,
+        lowLightDetected: lowLightDetected,
+        lightingAssistUsed: lightingAssistUsed
+    )
+    let base = (0.60 * teethSignal) + (0.40 * lightingQuality)
+    let confidence = clamp(base, minValue: 0.15, maxValue: 0.95)
 
     return ConfidenceBreakdown(
+        base: base,
         value: confidence,
-        shade: shadeConfidence,
-        coverage: coverageConfidence,
-        uniformity: uniformityConfidence,
-        sampleSize: sampleSizeConfidence,
-        illumination: illuminationReferenceConfidence
+        teethSignal: teethSignal,
+        lightingQuality: lightingQuality,
+        limitingFactor: limitingFactor(teethSignal: teethSignal, lightingQuality: lightingQuality)
     )
+}
+
+private func teethSignalQuality(stats: LabStats, shadeDistance: Double) -> Double {
+    let lScore = clamp((stats.meanL - 35.0) / 40.0, minValue: 0, maxValue: 1)
+    let aScore = 1 - clamp(abs(stats.meanA - 1.0) / 14.0, minValue: 0, maxValue: 1)
+    let bScore = 1 - clamp(abs(stats.meanB - 18.0) / 16.0, minValue: 0, maxValue: 1)
+    let areaScore = clamp((stats.weightedCoverage - 0.0025) / 0.0085, minValue: 0, maxValue: 1)
+    let shadeSupport = clamp(1 - shadeDistance / 28.0, minValue: 0, maxValue: 1)
+
+    return clamp(
+        (0.32 * lScore)
+            + (0.20 * aScore)
+            + (0.18 * bScore)
+            + (0.15 * areaScore)
+            + (0.15 * shadeSupport),
+        minValue: 0,
+        maxValue: 1
+    )
+}
+
+private func lightingQualityScore(stats: LabStats, lowLightDetected: Bool, lightingAssistUsed: Bool) -> Double {
+    let brightnessScore = clamp((stats.meanL - 32.0) / 38.0, minValue: 0, maxValue: 1)
+    let varianceScore = clamp(1 - (stats.stdL / 18.0), minValue: 0, maxValue: 1)
+    let lowLightScore = lowLightDetected ? (lightingAssistUsed ? 0.48 : 0.32) : 0.88
+    let assistBonus = lightingAssistUsed ? 0.05 : 0.0
+
+    return clamp(
+        (0.55 * lowLightScore)
+            + (0.30 * brightnessScore)
+            + (0.15 * varianceScore)
+            + assistBonus,
+        minValue: 0,
+        maxValue: 1
+    )
+}
+
+private func limitingFactor(teethSignal: Double, lightingQuality: Double) -> String {
+    if teethSignal < lightingQuality, teethSignal < 0.55 {
+        return "teeth_signal"
+    }
+    if lightingQuality < teethSignal, lightingQuality < 0.55 {
+        return "lighting"
+    }
+    return "balanced"
 }
 
 private func trimmedLabSamples(
@@ -527,7 +561,7 @@ private func captureQualityFlags(
     stats: LabStats,
     confidence: Double,
     lowLightDetected: Bool,
-    illuminationReferenceConfidence: Double
+    limitingFactor: String
 ) -> [String] {
     var flags: [String] = []
     if stats.coverage < 0.005 {
@@ -545,21 +579,32 @@ private func captureQualityFlags(
     if lowLightDetected {
         flags.append("low_light_capture")
     }
-    if illuminationReferenceConfidence < 0.4 {
-        flags.append("weak_illumination_reference")
+    if limitingFactor == "lighting" {
+        flags.append("lighting_limited")
+    } else if limitingFactor == "teeth_signal" {
+        flags.append("teeth_signal_limited")
     }
     return flags
 }
 
-private func buildDisclaimer(confidence: Double, flags: [String]) -> String {
+private func buildDisclaimer(confidence: Double, flags: [String], limitingFactor: String) -> String {
     if flags.isEmpty, confidence >= 0.6 {
         return "Local estimate from the current capture. Compare trends across multiple scans for better reliability."
+    }
+    if limitingFactor == "lighting" {
+        return "Lighting is the main limit for this scan. Use brighter, even front lighting to improve confidence."
+    }
+    if limitingFactor == "teeth_signal" {
+        return "Teeth visibility is the main limit for this scan. Show a fuller smile and keep teeth centered."
     }
     return "Local estimate with reduced reliability for this capture. Re-scan in brighter, even lighting and keep teeth centered to improve confidence."
 }
 
-private func buildTakeaway(score: Int, issues: [DetectedIssue], confidence: Double) -> String {
+private func buildTakeaway(score: Int, issues: [DetectedIssue], confidence: Double, limitingFactor: String) -> String {
     if confidence < 0.35 {
+        if limitingFactor == "lighting" {
+            return "This result is mostly limited by lighting. Retake with stronger front light for a more reliable score."
+        }
         return "Capture quality is limiting precision. Retake with a wider smile, steady framing, and brighter front lighting."
     }
     if score >= 70 {
@@ -569,163 +614,6 @@ private func buildTakeaway(score: Int, issues: [DetectedIssue], confidence: Doub
         return "Tone suggests surface staining. Consistent brushing/flossing and stain-reducing habits can help over time."
     }
     return "Result is usable for trend tracking. Repeat scans in similar lighting to compare progress more reliably."
-}
-
-private func illuminationReferenceConfidence(from reference: ScleraReference?, lowLightDetected: Bool) -> Double {
-    guard let reference else {
-        return clamp(lowLightDetected ? 0.28 : 0.52, minValue: 0.15, maxValue: 0.95)
-    }
-    let lowLightPenalty = lowLightDetected ? 0.12 : 0
-    return clamp((0.35 + (0.65 * reference.reliability)) - lowLightPenalty, minValue: 0.15, maxValue: 0.95)
-}
-
-private func lightingStabilityPenalty(reference: ScleraReference?, lowLightDetected: Bool) -> Double {
-    guard let reference else {
-        return lowLightDetected ? 0.06 : 0.02
-    }
-    let chroma = sqrt((reference.meanA * reference.meanA) + (reference.meanB * reference.meanB))
-    let chromaPenalty = clamp((chroma - 10) / 22, minValue: 0, maxValue: 0.09)
-    let darknessPenalty = clamp((74 - reference.meanL) / 20, minValue: 0, maxValue: 0.06)
-    let lowLightPenalty = lowLightDetected ? 0.02 : 0
-    return clamp(chromaPenalty + darknessPenalty + lowLightPenalty, minValue: 0, maxValue: 0.12)
-}
-
-private func extractScleraReference(from image: UIImage) -> ScleraReference? {
-    guard let cgImage = image.cgImage else { return nil }
-
-    let request = VNDetectFaceLandmarksRequest()
-    let handler = VNImageRequestHandler(cgImage: cgImage, orientation: visionOrientation(from: image.imageOrientation), options: [:])
-    do {
-        try handler.perform([request])
-    } catch {
-        return nil
-    }
-
-    guard
-        let observations = request.results,
-        let face = observations.first,
-        let landmarks = face.landmarks,
-        let leftEye = landmarks.leftEye,
-        let rightEye = landmarks.rightEye
-    else {
-        return nil
-    }
-
-    let width = cgImage.width
-    let height = cgImage.height
-    guard let raster = rasterizedRGBA(from: image) else { return nil }
-
-    let leftPolygon = eyePolygonPixels(eye: leftEye, face: face, width: width, height: height)
-    let rightPolygon = eyePolygonPixels(eye: rightEye, face: face, width: width, height: height)
-    let polygon = leftPolygon + rightPolygon
-    guard polygon.count >= 8 else { return nil }
-
-    var minX = width
-    var minY = height
-    var maxX = 0
-    var maxY = 0
-    for point in polygon {
-        minX = min(minX, Int(point.x))
-        minY = min(minY, Int(point.y))
-        maxX = max(maxX, Int(point.x))
-        maxY = max(maxY, Int(point.y))
-    }
-    guard minX < maxX, minY < maxY else { return nil }
-
-    let clippedMinX = max(0, minX)
-    let clippedMinY = max(0, minY)
-    let clippedMaxX = min(width - 1, maxX)
-    let clippedMaxY = min(height - 1, maxY)
-    guard clippedMinX < clippedMaxX, clippedMinY < clippedMaxY else { return nil }
-
-    var samples: [(l: Double, a: Double, b: Double)] = []
-    for y in clippedMinY...clippedMaxY {
-        for x in clippedMinX...clippedMaxX {
-            let point = CGPoint(x: x, y: y)
-            if !pointInPolygon(point, polygon: leftPolygon), !pointInPolygon(point, polygon: rightPolygon) {
-                continue
-            }
-
-            let pixel = (y * raster.width + x) * 4
-            let r = Double(raster.bytes[pixel]) / 255.0
-            let g = Double(raster.bytes[pixel + 1]) / 255.0
-            let b = Double(raster.bytes[pixel + 2]) / 255.0
-            let lab = rgbToLab(r: r, g: g, b: b)
-            let chroma = sqrt((lab.a * lab.a) + (lab.bValue * lab.bValue))
-            if lab.l < 68 || chroma > 18 {
-                continue
-            }
-            samples.append((l: lab.l, a: lab.a, b: lab.bValue))
-        }
-    }
-
-    guard samples.count >= 120 else { return nil }
-    let meanL = samples.reduce(0) { $0 + $1.l } / Double(samples.count)
-    let meanA = samples.reduce(0) { $0 + $1.a } / Double(samples.count)
-    let meanB = samples.reduce(0) { $0 + $1.b } / Double(samples.count)
-    let chroma = sqrt((meanA * meanA) + (meanB * meanB))
-    let reliability = clamp(
-        (0.45 * clamp((meanL - 70) / 18, minValue: 0, maxValue: 1))
-            + (0.35 * (1 - clamp(chroma / 16, minValue: 0, maxValue: 1)))
-            + (0.20 * clamp(Double(samples.count) / 900, minValue: 0, maxValue: 1)),
-        minValue: 0,
-        maxValue: 1
-    )
-
-    return ScleraReference(
-        meanL: meanL,
-        meanA: meanA,
-        meanB: meanB,
-        pixelCount: samples.count,
-        reliability: reliability
-    )
-}
-
-private func eyePolygonPixels(
-    eye: VNFaceLandmarkRegion2D,
-    face: VNFaceObservation,
-    width: Int,
-    height: Int
-) -> [CGPoint] {
-    eye.normalizedPoints.map { point in
-        let xVision = face.boundingBox.origin.x + CGFloat(point.x) * face.boundingBox.width
-        let yVision = face.boundingBox.origin.y + CGFloat(point.y) * face.boundingBox.height
-        return CGPoint(
-            x: xVision * CGFloat(width),
-            y: (1.0 - yVision) * CGFloat(height)
-        )
-    }
-}
-
-private func pointInPolygon(_ point: CGPoint, polygon: [CGPoint]) -> Bool {
-    guard polygon.count >= 3 else { return false }
-    var inside = false
-    var j = polygon.count - 1
-    for i in 0..<polygon.count {
-        let pi = polygon[i]
-        let pj = polygon[j]
-        let intersects = ((pi.y > point.y) != (pj.y > point.y))
-            && (point.x < (pj.x - pi.x) * (point.y - pi.y) / max((pj.y - pi.y), 0.000001) + pi.x)
-        if intersects {
-            inside.toggle()
-        }
-        j = i
-    }
-    return inside
-}
-
-private func visionOrientation(from orientation: UIImage.Orientation) -> CGImagePropertyOrientation {
-    switch orientation {
-    case .up: return .up
-    case .down: return .down
-    case .left: return .left
-    case .right: return .right
-    case .upMirrored: return .upMirrored
-    case .downMirrored: return .downMirrored
-    case .leftMirrored: return .leftMirrored
-    case .rightMirrored: return .rightMirrored
-    @unknown default: return .up
-    }
 }
 
 private func nearestShadeForLab(l: Double, a: Double, b: Double) -> ShadeMatch {

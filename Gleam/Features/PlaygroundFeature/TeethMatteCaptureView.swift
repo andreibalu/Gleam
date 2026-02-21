@@ -45,13 +45,31 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
     private var screenFlashEnabled = true
     private var lastLowLightDetected = false
     private var lastScreenFlashFired = false
+    private var lastLowLightSnapshot: LowLightSnapshot?
+    private var captureSequence = 0
+    private var lastCaptureID = 0
     private var flashInFlight = false
     private var storedScreenBrightness: CGFloat?
+    private let verboseCameraLogsEnabled = false
     private let logPrefix = "[TeethPlaygroundCamera]"
+    private let captureResultLogPrefix = "[TeethPlaygroundCaptureResult]"
+    private let lowLightOffsetHardThreshold: Float = -0.8
+    private let lowLightIsoRatioHardThreshold: Float = 20.0
+    private let lowLightIsoRatioSoftThreshold: Float = 14.0
+    private let lowLightOffsetSoftThreshold: Float = -0.2
 
     private struct MaskSanity {
         let hardCoverage: Double
         let weightedCoverage: Double
+    }
+
+    private struct LowLightSnapshot {
+        let exposureOffset: Float
+        let iso: Float
+        let minISO: Float
+        let isoRatio: Float
+        let detected: Bool
+        let trigger: String
     }
 
     override func viewDidLoad() {
@@ -323,10 +341,14 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
         sessionQueue.async { [weak self] in
             guard let self else { return }
             guard self.sessionConfigured else { return }
-            let lowLightDetected = self.detectLowLight()
+            let lowLightSnapshot = self.detectLowLightSnapshot()
+            let lowLightDetected = lowLightSnapshot?.detected ?? false
             self.lastLowLightDetected = lowLightDetected
+            self.lastLowLightSnapshot = lowLightSnapshot
             let shouldFlash = self.shouldFireScreenFlash(lowLightDetected: lowLightDetected)
             self.lastScreenFlashFired = shouldFlash
+            self.captureSequence += 1
+            self.lastCaptureID = self.captureSequence
 
             DispatchQueue.main.async {
                 self.updateFlashAssistStatusLabel(lowLight: lowLightDetected)
@@ -334,6 +356,13 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
             if shouldFlash {
                 self.triggerScreenFlash()
             }
+
+            self.logCaptureRequest(
+                captureID: self.lastCaptureID,
+                lowLightSnapshot: lowLightSnapshot,
+                lowLightDetected: lowLightDetected,
+                shouldFlash: shouldFlash
+            )
 
             let settings = AVCapturePhotoSettings()
             settings.isHighResolutionPhotoEnabled = true
@@ -365,7 +394,7 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
 
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
         if let error {
-            log("didFinishProcessingPhoto error: \(error.localizedDescription)")
+            logError("didFinishProcessingPhoto error: \(error.localizedDescription)")
             DispatchQueue.main.async { [weak self] in
                 self?.onError?("Photo capture failed.")
             }
@@ -376,7 +405,7 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
             let data = photo.fileDataRepresentation(),
             let rawImage = UIImage(data: data)
         else {
-            log("didFinishProcessingPhoto invalid data or UIImage decode failed")
+            logError("didFinishProcessingPhoto invalid data or UIImage decode failed")
             DispatchQueue.main.async { [weak self] in
                 self?.onError?("Captured image data is invalid.")
             }
@@ -423,6 +452,16 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
                 )
         )
 
+        logCaptureResult(
+            captureID: lastCaptureID,
+            photoSize: normalizedPhoto.size,
+            hasTeethMatte: alignedMask != nil,
+            weakMatte: weakMatte,
+            maskSanity: maskSanity,
+            captureContext: sample.captureContext,
+            lowLightSnapshot: lastLowLightSnapshot
+        )
+
         DispatchQueue.main.async { [weak self] in
             if weakMatte {
                 self?.matteStatusLabel.text = "Teeth matte returned, but coverage is weak. Retake with brighter light."
@@ -463,28 +502,98 @@ final class TeethMatteCameraViewController: UIViewController, AVCapturePhotoCapt
         error: Error?
     ) {
         if let error {
-            log("didFinishCaptureFor error (uniqueID \(resolvedSettings.uniqueID)): \(error.localizedDescription)")
-        } else {
-            log("didFinishCaptureFor completed (uniqueID \(resolvedSettings.uniqueID))")
+            logError("didFinishCaptureFor error (uniqueID \(resolvedSettings.uniqueID)): \(error.localizedDescription)")
         }
     }
 
     private func log(_ message: String) {
+        guard verboseCameraLogsEnabled else { return }
         print("\(logPrefix) \(message)")
     }
 
-    private func detectLowLight() -> Bool {
-        guard let device = frontCameraDevice else { return false }
+    private func logError(_ message: String) {
+        print("\(logPrefix) [error] \(message)")
+    }
+
+    private func logCaptureRequest(
+        captureID: Int,
+        lowLightSnapshot: LowLightSnapshot?,
+        lowLightDetected: Bool,
+        shouldFlash: Bool
+    ) {
+        print(
+            "\(captureResultLogPrefix) phase=request shot=\(captureID) lowLight=\(boolText(lowLightDetected)) lowLightTrigger=\(lowLightSnapshot?.trigger ?? "n/a") exposureOffset=\(format(lowLightSnapshot?.exposureOffset)) isoRatio=\(format(lowLightSnapshot?.isoRatio)) iso=\(format(lowLightSnapshot?.iso)) minISO=\(format(lowLightSnapshot?.minISO)) assistEnabled=\(boolText(screenFlashEnabled)) assistWillFire=\(boolText(shouldFlash))"
+        )
+    }
+
+    private func logCaptureResult(
+        captureID: Int,
+        photoSize: CGSize,
+        hasTeethMatte: Bool,
+        weakMatte: Bool,
+        maskSanity: MaskSanity?,
+        captureContext: TeethPlaygroundCaptureContext,
+        lowLightSnapshot: LowLightSnapshot?
+    ) {
+        let hardCoverage = format(maskSanity?.hardCoverage)
+        let weightedCoverage = format(maskSanity?.weightedCoverage)
+        let lowLightSource = lowLightSnapshot == nil ? "unknown" : "camera"
+        print(
+            "\(captureResultLogPrefix) phase=result shot=\(captureID) lowLight=\(boolText(captureContext.lowLightDetected)) lowLightSource=\(lowLightSource) lowLightTrigger=\(lowLightSnapshot?.trigger ?? "n/a") exposureOffset=\(format(lowLightSnapshot?.exposureOffset)) isoRatio=\(format(lowLightSnapshot?.isoRatio)) assistEnabled=\(boolText(captureContext.lightingAssistEnabled)) assistFired=\(boolText(captureContext.lightingAssistUsed)) matte=\(boolText(hasTeethMatte)) weakMatte=\(boolText(weakMatte)) hardCoverage=\(hardCoverage) weightedCoverage=\(weightedCoverage) photo=\(Int(photoSize.width))x\(Int(photoSize.height))"
+        )
+    }
+
+    private func detectLowLightSnapshot() -> LowLightSnapshot? {
+        guard let device = frontCameraDevice else { return nil }
         do {
             try device.lockForConfiguration()
             let offset = device.exposureTargetOffset
-            let isoRatio = device.iso / max(device.activeFormat.minISO, 1)
+            let iso = device.iso
+            let minISO = max(device.activeFormat.minISO, 1)
+            let isoRatio = iso / minISO
             device.unlockForConfiguration()
-            return offset < -0.8 || isoRatio > 2.2
+
+            let hardOffsetLow = offset < lowLightOffsetHardThreshold
+            let hardIsoLow = isoRatio >= lowLightIsoRatioHardThreshold
+            let softIsoWithOffsetLow = isoRatio >= lowLightIsoRatioSoftThreshold && offset <= lowLightOffsetSoftThreshold
+            let detected = hardOffsetLow || hardIsoLow || softIsoWithOffsetLow
+            let trigger: String
+            if hardOffsetLow {
+                trigger = "offset_hard"
+            } else if hardIsoLow {
+                trigger = "iso_hard"
+            } else if softIsoWithOffsetLow {
+                trigger = "iso_soft_offset"
+            } else {
+                trigger = "none"
+            }
+
+            return LowLightSnapshot(
+                exposureOffset: offset,
+                iso: iso,
+                minISO: minISO,
+                isoRatio: isoRatio,
+                detected: detected,
+                trigger: trigger
+            )
         } catch {
-            log("low-light check failed: \(error.localizedDescription)")
-            return false
+            logError("low-light check failed: \(error.localizedDescription)")
+            return nil
         }
+    }
+
+    private func boolText(_ value: Bool) -> String {
+        value ? "yes" : "no"
+    }
+
+    private func format(_ value: Float?) -> String {
+        guard let value else { return "n/a" }
+        return String(format: "%.3f", value)
+    }
+
+    private func format(_ value: Double?) -> String {
+        guard let value else { return "n/a" }
+        return String(format: "%.4f", value)
     }
 
     private func shouldFireScreenFlash(lowLightDetected: Bool) -> Bool {

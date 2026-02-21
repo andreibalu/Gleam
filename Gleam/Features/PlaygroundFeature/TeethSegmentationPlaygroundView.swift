@@ -232,12 +232,10 @@ struct TeethSegmentationPlaygroundView: View {
             VStack(alignment: .leading, spacing: AppSpacing.s) {
                 Text("Confidence diagnostics")
                     .font(.subheadline.weight(.semibold))
-                metricRow("Shade match", value: String(format: "%.0f%%", analysis.metrics.shadeConfidence * 100))
-                metricRow("Coverage quality", value: String(format: "%.0f%%", analysis.metrics.coverageConfidence * 100))
-                metricRow("Uniformity quality", value: String(format: "%.0f%%", analysis.metrics.uniformityConfidence * 100))
-                metricRow("Sample size quality", value: String(format: "%.0f%%", analysis.metrics.sampleSizeConfidence * 100))
-                metricRow("Illumination reference", value: String(format: "%.0f%%", analysis.metrics.illuminationReferenceConfidence * 100))
-                metricRow("Sclera reference", value: analysis.metrics.scleraReferenceDetected ? "Detected (\(analysis.metrics.scleraPixelCount) px)" : "Unavailable")
+                metricRow("Teeth signal quality (TS)", value: String(format: "%.0f%%", analysis.metrics.teethSignalQuality * 100))
+                metricRow("Lighting quality (LQ)", value: String(format: "%.0f%%", analysis.metrics.lightingQuality * 100))
+                metricRow("Confidence base", value: String(format: "%.0f%%", analysis.metrics.confidenceBase * 100))
+                metricRow("Limiting factor", value: analysis.metrics.limitingFactor.replacingOccurrences(of: "_", with: " ").capitalized)
                 metricRow("Low-light flag", value: analysis.metrics.lowLightDetected ? "Yes" : "No")
                 metricRow("Lighting assist", value: analysis.metrics.lightingAssistEnabled ? (analysis.metrics.lightingAssistUsed ? "Enabled + fired" : "Enabled") : "Off")
                 if !analysis.metrics.qualityFlags.isEmpty {
