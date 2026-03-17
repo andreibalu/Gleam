@@ -719,8 +719,32 @@ private struct JourneyProgressSection: View {
     }
 
     private var progress: CGFloat {
-        guard let score else { return 0 }
-        return CGFloat(min(max(score / 10.0, 0), 1))
+        guard let score = score else { return 0 }
+        let count = stages.count
+        guard count > 1 else { return CGFloat(min(max(score / 10.0, 0), 1)) }
+
+        let currentIdx = stages.lastIndex { score >= $0.threshold } ?? 0
+        let nextIdx = currentIdx + 1
+
+        let labelCenter: (Int) -> CGFloat = { i in
+            (CGFloat(2 * i) + 1) / CGFloat(2 * count)
+        }
+
+        let currentPos = labelCenter(currentIdx)
+
+        guard nextIdx < count else {
+            // At final stage: fill proportionally from current label to end
+            let fromThreshold = CGFloat(stages[currentIdx].threshold)
+            let t = (CGFloat(score) - fromThreshold) / CGFloat(10 - fromThreshold)
+            return currentPos + max(0, min(1, t)) * (1.0 - currentPos)
+        }
+
+        let nextPos = labelCenter(nextIdx)
+        let currentThreshold = CGFloat(stages[currentIdx].threshold)
+        let nextThreshold = CGFloat(stages[nextIdx].threshold)
+        let segmentProgress = (CGFloat(score) - currentThreshold) / (nextThreshold - currentThreshold)
+        let clamped = max(0, min(0.92, segmentProgress)) // stop before next label
+        return currentPos + clamped * (nextPos - currentPos)
     }
 
     private var currentStage: ShadeStage {
