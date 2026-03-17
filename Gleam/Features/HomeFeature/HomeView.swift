@@ -22,6 +22,7 @@ struct HomeView: View {
     @State private var showAchievementsModal = false
     @State private var showHabitSheet = false
     @State private var showFlow = false
+    @State private var toastMessage: String?
 
     private let shadeStages = ShadeStage.defaults
     private let defaultPlan = Recommendations(
@@ -98,10 +99,10 @@ struct HomeView: View {
                     stage: stage(for: displayScore ?? 0),
                     nextStage: nextStage(after: displayScore ?? 0),
                     deltaToNext: deltaToNextStage,
-                    hasScan: lastResult != nil,
+                    hasScan: lastResult != nil || !historyStore.items.isEmpty,
                     hasScanToday: hasScanToday,
                     currentStreak: historyStore.currentStreak,
-                    onScan: { showCamera = true },
+                    onScan: { AppHaptics.buttonTap(); showCamera = true },
                     onCompare: { scanSession.shouldOpenHistory = true }
                 )
 
@@ -193,6 +194,12 @@ struct HomeView: View {
             }
         }
         .animation(.spring(response: 0.6, dampingFraction: 0.85), value: achievementManager.activeCelebration?.id)
+        .overlay(alignment: .top) {
+            if let toastMessage {
+                ToastView(message: toastMessage)
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: toastMessage)
         .task {
             await loadInitialData()
         }
@@ -256,7 +263,7 @@ struct HomeView: View {
                 }
             }
         } catch {
-            // Ignore sync errors; local history still works
+            await MainActor.run { showToast("Couldn't sync history — using local data.") }
         }
     }
 
@@ -272,7 +279,16 @@ struct HomeView: View {
                 }
             }
         } catch {
-            // Ignore fetch errors; experience still works with cached plan
+            await MainActor.run { showToast("Couldn't load your plan — try again later.") }
+        }
+    }
+
+    @MainActor
+    private func showToast(_ message: String) {
+        toastMessage = message
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            toastMessage = nil
         }
     }
 
@@ -400,7 +416,7 @@ struct HomeView: View {
             LearnCard(
                 title: "How to brush for lasting whiteness",
                 subtitle: "Two minutes, twice a day with micro-circular motions keeps enamel bright.",
-                icon: "toothbrush.fill",
+                icon: "sparkles",
                 gradient: [Color(red: 0.82, green: 0.91, blue: 1.0), Color(red: 0.68, green: 0.81, blue: 1.0)]
             ),
             LearnCard(
@@ -537,6 +553,7 @@ private struct HomeHeroCard: View {
                                 .padding(.vertical, 14)
                         }
                         .buttonStyle(FloatingPrimaryButtonStyle())
+                        .accessibilityIdentifier("home_scan_button")
 
                         Button {
                             onCompare()
@@ -568,6 +585,7 @@ private struct HomeHeroCard: View {
                                 .padding(.vertical, 14)
                         }
                         .buttonStyle(FloatingPrimaryButtonStyle())
+                        .accessibilityIdentifier("home_scan_button")
                         .padding(.top, AppSpacing.s)
                     }
                     Spacer(minLength: 0)
@@ -1013,6 +1031,12 @@ private struct ToothButton: View {
     let onLongPress: () -> Void
 
     @GestureState private var isPressing = false
+    @AppStorage("hasCompletedFirstBrushing") private var hasCompletedFirstBrushing = false
+    @State private var pulseHint = false
+
+    private var showHint: Bool {
+        state == .available && !hasCompletedFirstBrushing
+    }
 
     var body: some View {
         let gesture = LongPressGesture(minimumDuration: 0.6)
@@ -1021,30 +1045,48 @@ private struct ToothButton: View {
             }
             .onEnded { completed in
                 if completed {
+                    hasCompletedFirstBrushing = true
                     onLongPress()
                 }
             }
 
-        ZStack {
-            Circle()
-                .fill(backgroundColor)
-                .frame(width: 78, height: 78)
-                .shadow(color: shadowColor, radius: 12, x: 0, y: 10)
-                .overlay(
+        VStack(spacing: 6) {
+            ZStack {
+                if showHint {
                     Circle()
-                        .strokeBorder(borderColor, lineWidth: state == .completed ? 0 : 2)
-                )
+                        .stroke(iconColor.opacity(0.3), lineWidth: 3)
+                        .frame(width: 90, height: 90)
+                        .scaleEffect(pulseHint ? 1.1 : 1.0)
+                        .opacity(pulseHint ? 0.2 : 0.4)
+                        .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: pulseHint)
+                }
 
-            Image(systemName: iconName)
-                .font(.system(size: 32, weight: .semibold))
-                .foregroundStyle(iconColor)
-
-            if isCelebrating {
                 Circle()
-                    .stroke(iconColor.opacity(0.65), lineWidth: 4)
-                    .scaleEffect(1.3)
-                    .opacity(0.8)
-                    .animation(.easeOut(duration: 0.8).repeatCount(1, autoreverses: false), value: isCelebrating)
+                    .fill(backgroundColor)
+                    .frame(width: 78, height: 78)
+                    .shadow(color: shadowColor, radius: 12, x: 0, y: 10)
+                    .overlay(
+                        Circle()
+                            .strokeBorder(borderColor, lineWidth: state == .completed ? 0 : 2)
+                    )
+
+                Image(systemName: iconName)
+                    .font(.system(size: 32, weight: .semibold))
+                    .foregroundStyle(iconColor)
+
+                if isCelebrating {
+                    Circle()
+                        .stroke(iconColor.opacity(0.65), lineWidth: 4)
+                        .scaleEffect(1.3)
+                        .opacity(0.8)
+                        .animation(.easeOut(duration: 0.8).repeatCount(1, autoreverses: false), value: isCelebrating)
+                }
+            }
+
+            if showHint {
+                Text("Hold to complete")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         }
         .overlay(alignment: .topTrailing) {
@@ -1061,6 +1103,7 @@ private struct ToothButton: View {
         .accessibilityLabel(slot == .morning ? "Morning brushing" : "Night brushing")
         .accessibilityValue(accessibilityValue)
         .accessibilityHint("Long press to mark complete")
+        .onAppear { pulseHint = true }
     }
 
     private var backgroundColor: Color {

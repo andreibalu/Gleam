@@ -4,6 +4,18 @@ import XCTest
 @MainActor
 final class FlowEngineTests: XCTestCase {
 
+    #if DEBUG
+    private static var leakedEngines: [FlowEngine] = []
+    #endif
+
+    private func makeEngine() -> FlowEngine {
+        let engine = FlowEngine()
+        #if DEBUG
+        Self.leakedEngines.append(engine)
+        #endif
+        return engine
+    }
+
     // MARK: - FlowQuadrant
 
     func testFlowQuadrantHasFourCases() {
@@ -27,46 +39,46 @@ final class FlowEngineTests: XCTestCase {
     // MARK: - Initial state
 
     func testInitialStatusIsIdle() {
-        let engine = FlowEngine()
+        let engine = makeEngine()
         XCTAssertEqual(engine.status, .idle)
     }
 
     func testInitialTimeRemainingIs120() {
-        let engine = FlowEngine()
+        let engine = makeEngine()
         XCTAssertEqual(engine.timeRemaining, 120)
     }
 
     func testInitialProgressIsZero() {
-        let engine = FlowEngine()
+        let engine = makeEngine()
         XCTAssertEqual(engine.progress, 0)
     }
 
     func testInitialQuadrantIsUpperRight() {
-        let engine = FlowEngine()
+        let engine = makeEngine()
         XCTAssertEqual(engine.currentQuadrant, .upperRight)
     }
 
     func testInitialBriefingIsNil() {
-        let engine = FlowEngine()
+        let engine = makeEngine()
         XCTAssertNil(engine.currentBriefing)
     }
 
     // MARK: - start()
 
     func testStartFromIdleTransitionsToRunning() {
-        let engine = FlowEngine()
+        let engine = makeEngine()
         engine.start()
         XCTAssertEqual(engine.status, .running)
     }
 
     func testStartFromIdleSetsTimeRemainingTo120() {
-        let engine = FlowEngine()
+        let engine = makeEngine()
         engine.start()
         XCTAssertEqual(engine.timeRemaining, 120)
     }
 
     func testStartFromRunningIsNoOp() {
-        let engine = FlowEngine()
+        let engine = makeEngine()
         engine.start()
         engine.start()
         XCTAssertEqual(engine.status, .running)
@@ -75,20 +87,20 @@ final class FlowEngineTests: XCTestCase {
     // MARK: - pause()
 
     func testPauseFromRunningTransitionsToPaused() {
-        let engine = FlowEngine()
+        let engine = makeEngine()
         engine.start()
         engine.pause()
         XCTAssertEqual(engine.status, .paused)
     }
 
     func testPauseFromIdleIsNoOp() {
-        let engine = FlowEngine()
+        let engine = makeEngine()
         engine.pause()
         XCTAssertEqual(engine.status, .idle)
     }
 
     func testPauseFromPausedIsNoOp() {
-        let engine = FlowEngine()
+        let engine = makeEngine()
         engine.start()
         engine.pause()
         engine.pause()
@@ -98,7 +110,7 @@ final class FlowEngineTests: XCTestCase {
     // MARK: - reset()
 
     func testResetFromRunningRestoresIdleState() {
-        let engine = FlowEngine()
+        let engine = makeEngine()
         engine.start()
         engine.reset()
         XCTAssertEqual(engine.status, .idle)
@@ -108,7 +120,7 @@ final class FlowEngineTests: XCTestCase {
     }
 
     func testResetFromPausedRestoresIdleState() {
-        let engine = FlowEngine()
+        let engine = makeEngine()
         engine.start()
         engine.pause()
         engine.reset()
@@ -118,7 +130,7 @@ final class FlowEngineTests: XCTestCase {
     }
 
     func testResetFromIdleIsNoOp() {
-        let engine = FlowEngine()
+        let engine = makeEngine()
         engine.reset()
         XCTAssertEqual(engine.status, .idle)
         XCTAssertEqual(engine.timeRemaining, 120)
@@ -127,7 +139,7 @@ final class FlowEngineTests: XCTestCase {
     // MARK: - Resume (start from paused)
 
     func testStartFromPausedResumesWithoutResetting() {
-        let engine = FlowEngine()
+        let engine = makeEngine()
         engine.start()
         engine.pause()
         engine.start()

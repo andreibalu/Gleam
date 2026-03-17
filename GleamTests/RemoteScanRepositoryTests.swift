@@ -37,6 +37,8 @@ final class RemoteScanRepositoryTests: XCTestCase {
             XCTFail("Expected .invalidImage error")
         } catch let error as AppError {
             XCTAssertEqual(error, .invalidImage)
+        } catch {
+            XCTFail("Expected AppError.invalidImage, got \(error)")
         }
     }
 
@@ -81,6 +83,8 @@ final class RemoteScanRepositoryTests: XCTestCase {
             XCTFail("Expected error")
         } catch let error as AppError {
             XCTAssertEqual(error, .unauthorized)
+        } catch {
+            XCTFail("Expected AppError.unauthorized, got \(error)")
         }
     }
 
@@ -92,6 +96,8 @@ final class RemoteScanRepositoryTests: XCTestCase {
             XCTFail("Expected error")
         } catch let error as AppError {
             XCTAssertEqual(error, .unauthorized)
+        } catch {
+            XCTFail("Expected AppError.unauthorized, got \(error)")
         }
     }
 
@@ -103,6 +109,8 @@ final class RemoteScanRepositoryTests: XCTestCase {
             XCTFail("Expected error")
         } catch let error as AppError {
             XCTAssertEqual(error, .decoding)
+        } catch {
+            XCTFail("Expected AppError.decoding, got \(error)")
         }
     }
 
@@ -114,6 +122,8 @@ final class RemoteScanRepositoryTests: XCTestCase {
             XCTFail("Expected error")
         } catch let error as AppError {
             XCTAssertEqual(error, .network)
+        } catch {
+            XCTFail("Expected AppError.network, got \(error)")
         }
     }
 
@@ -166,6 +176,8 @@ final class RemoteScanRepositoryTests: XCTestCase {
             XCTFail("Expected error")
         } catch let error as AppError {
             XCTAssertEqual(error, .unauthorized)
+        } catch {
+            XCTFail("Expected AppError.unauthorized, got \(error)")
         }
     }
 

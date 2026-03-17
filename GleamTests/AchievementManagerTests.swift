@@ -4,6 +4,11 @@ import XCTest
 @MainActor
 final class AchievementManagerTests: XCTestCase {
 
+    #if DEBUG
+    private static var leakedManagers: [AchievementManager] = []
+    private static var leakedHistoryStores: [HistoryStore] = []
+    #endif
+
     // MARK: - Test Doubles
 
     private final class AchievementPersistingSpy: AchievementPersisting {
@@ -52,6 +57,10 @@ final class AchievementManagerTests: XCTestCase {
             persistence: persistence,
             authRepository: AuthRepositorySpy()
         )
+        #if DEBUG
+        Self.leakedHistoryStores.append(historyStore)
+        Self.leakedManagers.append(manager)
+        #endif
 
         // Drain the async bootstrap Task spawned in init.
         // bootstrap() has 3 suspension points (load, evaluate, pullFromCloud), so 5 yields is ample.
@@ -68,8 +77,8 @@ final class AchievementManagerTests: XCTestCase {
             detectedIssues: [],
             confidence: 0.9,
             referralNeeded: false,
-            disclaimer: nil,
-            personalTakeaway: nil
+            disclaimer: "",
+            personalTakeaway: ""
         )
         return HistoryItem(id: id, createdAt: date, result: result, contextTags: tags)
     }
@@ -183,23 +192,23 @@ final class AchievementManagerTests: XCTestCase {
     func testStainStrategistUnlocksBronzeWithTwoDistinctTags() async throws {
         let items = [
             scanItem(id: "a", tags: ["coffee"]),
-            scanItem(id: "b", daysAgo: 1, tags: ["wine"])
+            scanItem(id: "b", tags: ["wine"], daysAgo: 1)
         ]
         let (manager, _) = await makeManager(items: items)
 
-        let snapshot = try XCTUnwrap(manager.snapshots.first { $0.id == .stainStrategist })
-        XCTAssertEqual(snapshot.tier, .bronze)
+        let snapshot = try XCTUnwrap(manager.snapshots.first { $0.id == AchievementID.stainStrategist })
+        XCTAssertEqual(snapshot.tier, AchievementTier.bronze)
     }
 
     func testStainStrategistRemainsLockedWithOneDistinctTag() async throws {
         let items = [
             scanItem(id: "a", tags: ["coffee"]),
-            scanItem(id: "b", daysAgo: 1, tags: ["coffee"])
+            scanItem(id: "b", tags: ["coffee"], daysAgo: 1)
         ]
         let (manager, _) = await makeManager(items: items)
 
-        let snapshot = try XCTUnwrap(manager.snapshots.first { $0.id == .stainStrategist })
-        XCTAssertEqual(snapshot.tier, .locked)
+        let snapshot = try XCTUnwrap(manager.snapshots.first { $0.id == AchievementID.stainStrategist })
+        XCTAssertEqual(snapshot.tier, AchievementTier.locked)
     }
 
     // MARK: - Progress Fraction
@@ -239,7 +248,8 @@ final class AchievementManagerTests: XCTestCase {
     }
 
     func testDismissCelebrationClearsActiveCelebration() async throws {
-        let items = (1...5).map { scanItem(id: "s\($0)", daysAgo: $0) }
+        // 5 scans on same day (no streak) -> only scanCollector bronze unlocks
+        let items = (1...5).map { scanItem(id: "s\($0)") }
         let (manager, _) = await makeManager(items: items)
 
         let celebration = try XCTUnwrap(manager.activeCelebration)
@@ -249,7 +259,8 @@ final class AchievementManagerTests: XCTestCase {
     }
 
     func testDismissingWrongCelebrationDoesNotClearActive() async throws {
-        let items = (1...5).map { scanItem(id: "s\($0)", daysAgo: $0) }
+        // 5 scans on same day (no streak) -> only scanCollector bronze unlocks
+        let items = (1...5).map { scanItem(id: "s\($0)") }
         let (manager, _) = await makeManager(items: items)
 
         // Create a celebration that was NOT enqueued by the manager (different auto-generated UUID)

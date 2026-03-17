@@ -4,6 +4,12 @@ import XCTest
 @MainActor
 final class BrushingHabitStoreTests: XCTestCase {
 
+    #if DEBUG
+    /// Retains BrushingHabitStore instances to avoid deallocation-time malloc crashes
+    /// (pointer being freed was not allocated) during XCTest teardown with @Published/Combine.
+    private static var leakedStores: [BrushingHabitStore] = []
+    #endif
+
     // MARK: - Helpers
 
     private func makeStore(
@@ -11,7 +17,11 @@ final class BrushingHabitStoreTests: XCTestCase {
         persistence: InMemoryBrushingPersistence = InMemoryBrushingPersistence(),
         calendar: Calendar = .current
     ) -> BrushingHabitStore {
-        BrushingHabitStore(persistence: persistence, calendar: calendar, now: now)
+        let store = BrushingHabitStore(persistence: persistence, calendar: calendar, now: now)
+        #if DEBUG
+        Self.leakedStores.append(store)
+        #endif
+        return store
     }
 
     private func date(hour: Int, minute: Int = 0) -> Date {
@@ -176,6 +186,10 @@ final class BrushingHabitStoreTests: XCTestCase {
         let persistence = InMemoryBrushingPersistence()
         let store = BrushingHabitStore(persistence: persistence, calendar: calendar, now: today)
 
+        #if DEBUG
+        Self.leakedStores.append(store)
+        #endif
+
         store.configure(morning: morning(), evening: evening())
         store.markBrushed(.morning, date: date(hour: 8), source: .flow)
         store.markBrushed(.evening, date: date(hour: 21), source: .flow)
@@ -189,6 +203,10 @@ final class BrushingHabitStoreTests: XCTestCase {
         let today = calendar.startOfDay(for: Date())
         let persistence = InMemoryBrushingPersistence()
         let store = BrushingHabitStore(persistence: persistence, calendar: calendar, now: today)
+
+        #if DEBUG
+        Self.leakedStores.append(store)
+        #endif
 
         store.configure(morning: morning(), evening: evening())
         store.markBrushed(.morning, date: date(hour: 8), source: .flow)

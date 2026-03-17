@@ -3,10 +3,22 @@ import XCTest
 
 @MainActor
 final class HistoryStoreTests: XCTestCase {
+
+    #if DEBUG
+    private static var leakedStores: [HistoryStore] = []
+    #endif
+
+    private func leak(_ store: HistoryStore) {
+        #if DEBUG
+        Self.leakedStores.append(store)
+        #endif
+    }
+
     func testLoadPopulatesItemsFromRepository() async throws {
         let expected = sampleItems()
         let repository = HistoryRepositorySpy(listResult: expected)
         let store = HistoryStore(repository: repository)
+        leak(store)
 
         await store.load()
 
@@ -22,6 +34,7 @@ final class HistoryStoreTests: XCTestCase {
             repository: repository,
             remoteDeletionHandler: remoteDeletionSpy.delete
         )
+        leak(store)
 
         await store.load()
         let itemToDelete = try XCTUnwrap(store.items.first)
@@ -41,6 +54,7 @@ final class HistoryStoreTests: XCTestCase {
             repository: repository,
             dateProvider: { expectedDate }
         )
+        leak(store)
 
         let outcome = AnalyzeOutcome(
             id: expectedId,
@@ -62,6 +76,7 @@ final class HistoryStoreTests: XCTestCase {
     func testClearAllResetsItemsAndMetrics() async throws {
         let repository = HistoryRepositorySpy(listResult: sampleItems())
         let store = HistoryStore(repository: repository)
+        leak(store)
         await store.load()
         XCTAssertFalse(store.items.isEmpty)
 
@@ -76,6 +91,7 @@ final class HistoryStoreTests: XCTestCase {
     func testMetricsReflectAppendedItems() async throws {
         let repository = HistoryRepositorySpy(listResult: [])
         let store = HistoryStore(repository: repository)
+        leak(store)
         await store.load()
 
         let outcome = AnalyzeOutcome(
@@ -95,6 +111,7 @@ final class HistoryStoreTests: XCTestCase {
     func testSyncAddsMissingRemoteItems() async throws {
         let repository = HistoryRepositorySpy(listResult: [])
         let store = HistoryStore(repository: repository)
+        leak(store)
         await store.load()
 
         let remote = HistoryItem(
@@ -119,6 +136,7 @@ final class HistoryStoreTests: XCTestCase {
         )
         let repository = HistoryRepositorySpy(listResult: [localItem])
         let store = HistoryStore(repository: repository)
+        leak(store)
         await store.load()
 
         // Remote item with same result, within 2-minute window
@@ -144,6 +162,7 @@ final class HistoryStoreTests: XCTestCase {
         )
         let repository = HistoryRepositorySpy(listResult: [localItem])
         let store = HistoryStore(repository: repository)
+        leak(store)
         await store.load()
 
         let remoteItem = HistoryItem(
@@ -171,6 +190,7 @@ final class HistoryStoreTests: XCTestCase {
         ]
         let repository = HistoryRepositorySpy(listResult: items)
         let store = HistoryStore(repository: repository)
+        leak(store)
         await store.load()
 
         XCTAssertEqual(store.currentStreak, 3)
@@ -188,6 +208,7 @@ final class HistoryStoreTests: XCTestCase {
         ]
         let repository = HistoryRepositorySpy(listResult: items)
         let store = HistoryStore(repository: repository)
+        leak(store)
         await store.load()
 
         XCTAssertEqual(store.currentStreak, 1, "Gap of 2 days should break the streak")

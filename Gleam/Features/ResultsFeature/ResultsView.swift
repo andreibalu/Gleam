@@ -60,6 +60,7 @@ struct ResultsView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(PrimaryButtonStyle())
+                .simultaneousGesture(TapGesture().onEnded { AppHaptics.buttonTap() })
 
                 Text(result.disclaimer)
                     .font(.footnote)

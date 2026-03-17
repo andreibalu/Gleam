@@ -61,6 +61,7 @@ struct HistoryView: View {
                     }
                     .padding()
                 }
+                .refreshable { await historyStore.load() }
                 .confirmationDialog("Average window", isPresented: $showAveragePicker, titleVisibility: .visible) {
                     Button(AverageMode.last5.menuTitle) { averageMode = .last5 }
                     Button(AverageMode.last7Days.menuTitle) { averageMode = .last7Days }

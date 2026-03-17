@@ -2,6 +2,7 @@ import SwiftUI
 import PhotosUI
 import UIKit
 import Vision
+import Combine
 
 struct ScanView: View {
     @Environment(\.scanRepository) private var scanRepository
@@ -272,8 +273,11 @@ struct ScanView: View {
                 imageData: data,
                 fallbackContextTags: selectedTags.map { $0.id }
             )
+            AppHaptics.scanComplete()
             onFinished(outcome.result)
-        } catch { }
+        } catch {
+            AppHaptics.error()
+        }
     }
     
     /// Validation result for image face detection
@@ -760,6 +764,14 @@ private struct AnalysisOverlay: View {
     @State private var haloPulse = false
     @State private var ringRotation = false
     @State private var mouthFocus: MouthFocus? = nil
+    @State private var stageIndex = 0
+
+    private static let stages = [
+        "Examining your smile...",
+        "Mapping shade regions...",
+        "Detecting surface details...",
+        "Crafting your insights..."
+    ]
     
     init(imageData: Data?) {
         if let data = imageData {
@@ -866,10 +878,12 @@ private struct AnalysisOverlay: View {
                 Text("Analyzing Your Smile")
                             .font(.title2.weight(.semibold))
                             .foregroundStyle(Color.primary.opacity(0.92))
-                        Text("We’re polishing the details to craft your personalized insights.")
+                        Text(Self.stages[stageIndex])
                             .font(.body)
                             .multilineTextAlignment(.center)
                             .foregroundStyle(Color.secondary)
+                            .contentTransition(.opacity)
+                            .animation(.easeInOut(duration: 0.4), value: stageIndex)
                     }
                     .padding(.horizontal, AppSpacing.xl)
                     
@@ -886,6 +900,11 @@ private struct AnalysisOverlay: View {
             ringRotation = true
             if let img = image {
                 Task { mouthFocus = await detectMouthFocus(in: img) }
+            }
+        }
+        .onReceive(Timer.publish(every: 2.5, on: .main, in: .common).autoconnect()) { _ in
+            withAnimation {
+                stageIndex = (stageIndex + 1) % Self.stages.count
             }
         }
     }

@@ -2,6 +2,7 @@ import Combine
 import Foundation
 import UIKit
 #if canImport(FirebaseFirestore)
+import FirebaseCore
 import FirebaseFirestore
 #endif
 
@@ -21,11 +22,12 @@ final class AchievementManager: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
     private var records: [AchievementID: AchievementRecord] = [:]
     private var pendingCelebrations: [AchievementCelebration] = []
-    private let notificationGenerator = UINotificationFeedbackGenerator()
-    private let upgradeGenerator = UIImpactFeedbackGenerator(style: .heavy)
-#if canImport(FirebaseFirestore)
-    private let firestore = Firestore.firestore()
-#endif
+    private lazy var notificationGenerator: UINotificationFeedbackGenerator? = Self.isRunningTests ? nil : UINotificationFeedbackGenerator()
+    private lazy var upgradeGenerator: UIImpactFeedbackGenerator? = Self.isRunningTests ? nil : UIImpactFeedbackGenerator(style: .heavy)
+
+    private static var isRunningTests: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
 
     init(historyStore: HistoryStore, persistence: AchievementPersisting, authRepository: any AuthRepository) {
         self.historyStore = historyStore
@@ -87,8 +89,8 @@ final class AchievementManager: ObservableObject {
         )
 
         if !skipHaptics {
-            notificationGenerator.prepare()
-            upgradeGenerator.prepare()
+            notificationGenerator?.prepare()
+            upgradeGenerator?.prepare()
         }
 
         var updatedRecords = records
@@ -110,9 +112,9 @@ final class AchievementManager: ObservableObject {
 
                 if !skipHaptics {
                     if previousTier == .locked {
-                        notificationGenerator.notificationOccurred(.success)
+                        notificationGenerator?.notificationOccurred(.success)
                     } else {
-                        upgradeGenerator.impactOccurred(intensity: 1.0)
+                        upgradeGenerator?.impactOccurred(intensity: 1.0)
                     }
                 }
 
@@ -221,8 +223,9 @@ final class AchievementManager: ObservableObject {
 
     private func pullAchievementsFromCloud() async {
 #if canImport(FirebaseFirestore)
+        guard FirebaseApp.app() != nil else { return }
         guard let userId = await authRepository.currentUserId(), !userId.isEmpty else { return }
-        let collection = firestore.collection("users").document(userId).collection("achievements")
+        let collection = Firestore.firestore().collection("users").document(userId).collection("achievements")
 
         do {
             let documents = try await withCheckedThrowingContinuation { continuation in
@@ -256,8 +259,9 @@ final class AchievementManager: ObservableObject {
 
     private func syncAchievementsToCloud(records: [AchievementRecord]) async {
 #if canImport(FirebaseFirestore)
+        guard FirebaseApp.app() != nil else { return }
         guard let userId = await authRepository.currentUserId(), !userId.isEmpty else { return }
-        let collection = firestore.collection("users").document(userId).collection("achievements")
+        let collection = Firestore.firestore().collection("users").document(userId).collection("achievements")
         for record in records {
             var payload: [String: Any] = [
                 "tier": record.tier.rawValue,
