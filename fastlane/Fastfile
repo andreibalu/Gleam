@@ -1,0 +1,77 @@
+default_platform(:ios)
+
+platform :ios do
+
+  # ── Screenshots ──────────────────────────────────────────────────────────────
+  # Run on your Mac to generate screenshots in all required sizes.
+  # Requires the app to compile and a UI test target for snapshot.
+  #
+  # Usage: bundle exec fastlane screenshots
+  desc "Generate App Store screenshots using snapshot"
+  lane :screenshots do
+    snapshot
+  end
+
+  # ── TestFlight ────────────────────────────────────────────────────────────────
+  # Builds the app in Release mode and uploads to TestFlight.
+  # Requires a valid signing certificate and provisioning profile.
+  #
+  # Usage: bundle exec fastlane beta
+  desc "Build and upload to TestFlight"
+  lane :beta do
+    increment_build_number(
+      build_number: latest_testflight_build_number + 1,
+      xcodeproj: "Gleam.xcodeproj"
+    )
+    build_app(
+      scheme: "Gleam",
+      export_method: "app-store",
+      output_directory: "./build",
+      output_name: "Gleam.ipa"
+    )
+    upload_to_testflight(
+      skip_waiting_for_build_processing: true
+    )
+  end
+
+  # ── App Store Release ─────────────────────────────────────────────────────────
+  # Builds the app and submits metadata + binary for App Store review.
+  # Run `fastlane screenshots` first to generate screenshot files.
+  #
+  # Usage: bundle exec fastlane release
+  desc "Build, upload metadata and binary, and submit for App Store review"
+  lane :release do
+    increment_build_number(
+      build_number: latest_testflight_build_number + 1,
+      xcodeproj: "Gleam.xcodeproj"
+    )
+    build_app(
+      scheme: "Gleam",
+      export_method: "app-store",
+      output_directory: "./build",
+      output_name: "Gleam.ipa"
+    )
+    deliver(
+      submit_for_review: true,
+      automatic_release: false,
+      force: true,                   # Skip HTML report preview
+      skip_screenshots: false,
+      skip_metadata: false
+    )
+  end
+
+  # ── Metadata only ────────────────────────────────────────────────────────────
+  # Uploads only text metadata and screenshots without a new binary.
+  # Useful for updating store listing copy without a new build.
+  #
+  # Usage: bundle exec fastlane metadata
+  desc "Upload metadata and screenshots only (no binary)"
+  lane :metadata do
+    deliver(
+      submit_for_review: false,
+      skip_binary_upload: true,
+      force: true
+    )
+  end
+
+end

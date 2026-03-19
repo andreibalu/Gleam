@@ -1,0 +1,3 @@
+Initial release of Gleam — AI-powered smile whitening tracker.
+
+Snap a photo, get your whiteness score, track your progress, and follow a personalised care plan to your best smile.

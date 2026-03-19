@@ -1,0 +1,135 @@
+{
+  "identifier" : "Gleam",
+  "nonConsumableProducts" : [
+
+  ],
+  "nonRenewingSubscriptionProducts" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+    "_failTransactionsEnabled" : false,
+    "_interruptedPurchaseEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Load Products"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Purchase"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Verification"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "App Store Sync"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Subscription Status"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "App Transaction"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Send Diagnostic Report"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Win-Back Offer"
+      }
+    ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "gleam-pro-group",
+      "localizations" : [
+        {
+          "customAppName" : "Gleam",
+          "displayName" : "Gleam Pro",
+          "locale" : "en_US"
+        }
+      ],
+      "name" : "Gleam Pro",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "4.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "gleam-pro-monthly",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Unlimited scans, AI personalized plans, and full history.",
+              "displayName" : "Gleam Pro Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.gleam.pro.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Gleam Pro Monthly",
+          "subscriptionGroupID" : "gleam-pro-group",
+          "type" : "RecurringSubscription",
+          "winBackOffers" : [
+
+          ]
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "34.99",
+          "familyShareable" : false,
+          "groupNumber" : 2,
+          "internalID" : "gleam-pro-yearly",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Unlimited scans, AI personalized plans, and full history. Save ~40% vs monthly.",
+              "displayName" : "Gleam Pro Yearly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.gleam.pro.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Gleam Pro Yearly",
+          "subscriptionGroupID" : "gleam-pro-group",
+          "type" : "RecurringSubscription",
+          "winBackOffers" : [
+
+          ]
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

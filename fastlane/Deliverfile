@@ -1,0 +1,18 @@
+# Deliverfile — configuration for the `deliver` Fastlane action
+# Metadata lives in fastlane/metadata/en-US/
+
+app_identifier "com.gleam.app"
+username       "YOUR_APPLE_ID@email.com"   # Replace with your Apple ID
+
+metadata_path  "./fastlane/metadata"
+screenshots_path "./fastlane/screenshots"
+
+# App Store Connect language code
+default_language "en-US"
+
+# Skip binary upload when running the metadata-only lane
+# (overridden per-lane in Fastfile)
+skip_binary_upload false
+
+# Don't stop on warnings
+ignore_language_directory_validation true

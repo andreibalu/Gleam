@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Gleam uses your camera to capture a photo of your smile for whitening analysis.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Gleam lets you pick a photo from your library to analyze your smile whitening.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Gleam may save your scan photos to your photo library.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
