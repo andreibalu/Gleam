@@ -4,6 +4,12 @@ Legend: `[NO DEV ACCOUNT NEEDED]` = do this now | `[NEEDS DEV ACCOUNT]` = wait f
 
 ---
 
+> ⚠️ **REMINDER — DO THIS NOW IN XCODE (no dev account needed)**
+> **Edit Scheme → Run → Options → StoreKit Configuration → select `Gleam/Configuration/Gleam.storekit`**
+> This enables mock IAP purchases in the Simulator. Without it, the Subscribe button silently does nothing.
+
+---
+
 ## Start Here — No Dev Account Required
 
 - [x] **Info.plist privacy strings** `[NO DEV ACCOUNT NEEDED]` — done

@@ -4,6 +4,12 @@ Legend: `[DONE]` = implemented | `[NO DEV ACCOUNT NEEDED]` = can build/test now 
 
 ---
 
+> ⚠️ **DO THIS BEFORE TESTING — NO DEV ACCOUNT NEEDED**
+> In Xcode: **Edit Scheme → Run → Options → StoreKit Configuration → select `Gleam/Configuration/Gleam.storekit`**
+> Without this, IAP purchase buttons will silently do nothing in the Simulator.
+
+---
+
 ## ✅ Already Implemented (this session)
 
 | # | Task | Status |
@@ -100,10 +106,16 @@ bundle exec fastlane release
 
 ---
 
-## Xcode Setup Note (for you, on your Mac)
+## ⚠️ Xcode Setup — Do Before Testing (No Dev Account Needed)
 
 To enable local StoreKit testing without a dev account:
 1. Open `Gleam.xcodeproj`
-2. Product → Scheme → Edit Scheme
-3. Run → Options → StoreKit Configuration → select `Gleam/Configuration/Gleam.storekit`
-4. Build and run on Simulator — purchases will use local test products
+2. Product → Scheme → **Edit Scheme**
+3. **Run → Options → StoreKit Configuration** → select `Gleam/Configuration/Gleam.storekit`
+4. Build and run on Simulator — purchases will use local test products, no Apple account needed
+
+Once set, you can test the full paywall flow:
+- Use up 3 scans to trigger the paywall
+- Tap Subscribe — Xcode will prompt with a fake purchase sheet
+- After "purchase", `isPremium` becomes `true` and all limits are lifted
+- Check Settings to confirm Pro status is shown
