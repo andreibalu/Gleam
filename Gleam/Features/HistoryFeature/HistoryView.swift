@@ -3,8 +3,22 @@ import UIKit
 
 struct HistoryView: View {
     @EnvironmentObject private var historyStore: HistoryStore
+    @EnvironmentObject private var subscriptionManager: SubscriptionManager
     @State private var averageMode: AverageMode = .last5
     @State private var showAveragePicker: Bool = false
+    @State private var showPaywall = false
+
+    private static let freeHistoryLimit = 10
+
+    private var visibleItems: [HistoryItem] {
+        subscriptionManager.isPremium
+            ? historyStore.items
+            : Array(historyStore.items.prefix(Self.freeHistoryLimit))
+    }
+
+    private var hasHiddenItems: Bool {
+        !subscriptionManager.isPremium && historyStore.items.count > Self.freeHistoryLimit
+    }
 
     var body: some View {
         Group {
@@ -37,7 +51,7 @@ struct HistoryView: View {
                         )
 
                         LazyVStack(spacing: AppSpacing.m, pinnedViews: []) {
-                            ForEach(historyStore.items) { item in
+                            ForEach(visibleItems) { item in
                                 NavigationLink(value: item.result) {
                                     HistoryCardView(item: item, historyStore: historyStore)
                                 }
@@ -57,11 +71,46 @@ struct HistoryView: View {
                                     }
                                 }
                             }
+
+                            if hasHiddenItems {
+                                Button { showPaywall = true } label: {
+                                    HStack(spacing: AppSpacing.m) {
+                                        Image(systemName: "lock.fill")
+                                            .font(.title3)
+                                            .foregroundStyle(
+                                                LinearGradient(
+                                                    colors: [Color(red: 0.2, green: 0.5, blue: 1.0), Color(red: 0.6, green: 0.3, blue: 0.95)],
+                                                    startPoint: .leading, endPoint: .trailing
+                                                )
+                                            )
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Unlock full history")
+                                                .font(.subheadline)
+                                                .fontWeight(.semibold)
+                                            Text("\(historyStore.items.count - Self.freeHistoryLimit) older scans with Gleam Pro")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        Image(systemName: "chevron.right")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .padding()
+                                    .background(AppColors.card)
+                                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous))
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
                     }
                     .padding()
                 }
                 .refreshable { await historyStore.load() }
+                .sheet(isPresented: $showPaywall) {
+                    PaywallView()
+                        .environmentObject(subscriptionManager)
+                }
                 .confirmationDialog("Average window", isPresented: $showAveragePicker, titleVisibility: .visible) {
                     Button(AverageMode.last5.menuTitle) { averageMode = .last5 }
                     Button(AverageMode.last7Days.menuTitle) { averageMode = .last7Days }

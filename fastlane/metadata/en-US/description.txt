@@ -1,0 +1,28 @@
+Gleam turns a quick selfie into a full teeth-whitening analysis — no dentist visit required.
+
+Just smile into your camera. Gleam's AI detects your shade on the VITA scale (A1–D4), scores your whiteness from 0 to 10, flags any issues, and gives you a personalised care plan to follow at home.
+
+── WHAT GLEAM DOES ──
+
+Smart Smile Analysis
+Snap a photo and get an instant whiteness score, shade classification, and personalised recommendations — powered by advanced AI.
+
+Personalised Care Plans
+After building up your scan history, Gleam generates a custom daily, weekly, and cautionary routine tailored to your results.
+
+Scan History & Progress Tracking
+Every scan is saved so you can watch your whiteness improve over time. Charts, streaks, and average scores keep you motivated.
+
+Gleam Flow
+An immersive, mindful brushing guide with breathing animations to help you build a consistent oral-care habit.
+
+Achievement System
+Earn badges for daily streaks, peak whiteness scores, and tracking lifestyle stains like coffee, tea, and red wine.
+
+── GLEAM PRO ──
+Upgrade for unlimited daily scans, AI-generated personalised plans, and your full scan history.
+
+── PRIVACY ──
+Your photos are analysed securely and never shared. See our Privacy Policy for full details.
+
+The information provided by Gleam is for general informational purposes only and does not constitute medical advice. Always consult a qualified dental professional for dental health concerns.

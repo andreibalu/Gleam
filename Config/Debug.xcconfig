@@ -4,6 +4,9 @@
 
 API_BASE_URL = YOUR_FIREBASE_FUNCTIONS_DEV_URL_HERE
 
+MARKETING_VERSION = 1.0.0
+CURRENT_PROJECT_VERSION = 1
+
 // Note: OpenAI API key should NEVER be in the client
-// Set it in your backend with: firebase functions:config:set openai.key="your-key"
+// Set it in your backend with: firebase functions:secrets:set OPENAI_API_KEY
 

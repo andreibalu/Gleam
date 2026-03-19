@@ -1,0 +1,21 @@
+# Snapfile — configuration for the `snapshot` Fastlane action
+# Run: bundle exec fastlane screenshots
+
+# Devices that match the App Store required screenshot sizes
+devices([
+  "iPhone 16 Pro Max",   # 6.7" — required
+  "iPhone 16",           # 6.1" — required
+])
+
+languages(["en-US"])
+
+# The UI test scheme that drives snapshot
+scheme("GleamUITests")
+
+# Where screenshots are saved (Deliverfile expects this path)
+output_directory("./fastlane/screenshots")
+
+clear_previous_screenshots(true)
+
+# Suppress simulator keyboard
+add_photos([])

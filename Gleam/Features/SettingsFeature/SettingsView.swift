@@ -4,6 +4,7 @@ struct SettingsView: View {
     @Environment(\.authRepository) private var authRepository
     @EnvironmentObject private var scanSession: ScanSession
     @EnvironmentObject private var historyStore: HistoryStore
+    @EnvironmentObject private var subscriptionManager: SubscriptionManager
     @AppStorage(AppTheme.storageKey) private var themeRawValue: String = AppTheme.system.rawValue
     @AppStorage("didCompleteOnboarding") private var didCompleteOnboarding: Bool = false
     @State private var showResetAlert: Bool = false
@@ -11,6 +12,8 @@ struct SettingsView: View {
     @State private var showDeleteAccountAlert: Bool = false
     @State private var isDeleting: Bool = false
     @State private var errorMessage: String?
+    @State private var showPaywall = false
+    @State private var isRestoring = false
 
     private var themeSelection: Binding<AppTheme> {
         Binding(
@@ -21,6 +24,58 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section(header: Text("Gleam Pro")) {
+                if subscriptionManager.isPremium {
+                    HStack {
+                        Label("Gleam Pro", systemImage: "crown.fill")
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color(red: 0.2, green: 0.5, blue: 1.0), Color(red: 0.6, green: 0.3, blue: 0.95)],
+                                    startPoint: .leading, endPoint: .trailing
+                                )
+                            )
+                        Spacer()
+                        Text("Active")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Button("Manage Subscription") {
+                        if let url = URL(string: "itms-apps://apps.apple.com/account/subscriptions") {
+                            UIApplication.shared.open(url)
+                        }
+                    }
+                } else {
+                    Button {
+                        showPaywall = true
+                    } label: {
+                        Label("Upgrade to Gleam Pro", systemImage: "crown")
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color(red: 0.2, green: 0.5, blue: 1.0), Color(red: 0.6, green: 0.3, blue: 0.95)],
+                                    startPoint: .leading, endPoint: .trailing
+                                )
+                            )
+                    }
+                    Button {
+                        Task {
+                            isRestoring = true
+                            await subscriptionManager.restorePurchases()
+                            isRestoring = false
+                        }
+                    } label: {
+                        HStack {
+                            Text("Restore Purchases")
+                            if isRestoring { Spacer(); ProgressView() }
+                        }
+                    }
+                    .disabled(isRestoring)
+                }
+            }
+            .sheet(isPresented: $showPaywall) {
+                PaywallView()
+                    .environmentObject(subscriptionManager)
+            }
+
             Section(header: Text("Appearance")) {
                 Picker("Theme", selection: themeSelection) {
                     ForEach(AppTheme.allCases) { theme in

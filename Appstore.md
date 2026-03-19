@@ -1,199 +1,173 @@
 # Gleam — App Store Manual Checklist
 
-These steps **cannot be automated by Claude** and require your Apple Developer account, Mac with Xcode, or external dashboards.
+Legend: `[NO DEV ACCOUNT NEEDED]` = do this now | `[NEEDS DEV ACCOUNT]` = wait for Apple account
 
 ---
 
-## Phase 1 — Apple Developer Account (do first)
+## Start Here — No Dev Account Required
 
-- [ ] **Enroll in Apple Developer Program**
-  - Go to [developer.apple.com/programs](https://developer.apple.com/programs)
-  - Cost: $99/year
+- [x] **Info.plist privacy strings** `[NO DEV ACCOUNT NEEDED]` — done
+- [x] **StoreKit2 subscription code** `[NO DEV ACCOUNT NEEDED]` — done
+- [x] **Local `.storekit` config** for Simulator testing `[NO DEV ACCOUNT NEEDED]` — done
+- [x] **Free tier scan limit** (3/day) `[NO DEV ACCOUNT NEEDED]` — done
+- [x] **PaywallView** UI `[NO DEV ACCOUNT NEEDED]` — done
+- [x] **Premium gating** in all views `[NO DEV ACCOUNT NEEDED]` — done
+- [x] **Version numbers** in xcconfig (1.0.0 / build 1) `[NO DEV ACCOUNT NEEDED]` — done
+- [x] **Fastlane setup files** (run on Mac later) `[NO DEV ACCOUNT NEEDED]` — done
+- [ ] **Enable local StoreKit testing in Xcode** `[NO DEV ACCOUNT NEEDED]`
+  - Edit Scheme → Run → Options → StoreKit Configuration → `Gleam/Configuration/Gleam.storekit`
+- [ ] **Test paywall flow in Simulator** `[NO DEV ACCOUNT NEEDED]`
+  - Verify 3-scan daily limit triggers paywall
+  - Verify mock purchase sets `isPremium = true`
+  - Verify Settings shows Pro status after purchase
+
+---
+
+## Phase 1 — Apple Developer Account
+
+- [ ] **Enroll in Apple Developer Program** `[NEEDS DEV ACCOUNT]`
+  - [developer.apple.com/programs](https://developer.apple.com/programs) — $99/year
   - Requires Apple ID with 2FA enabled
   - Takes 24–48 hours to activate
 
-- [ ] **Create App ID (Bundle Identifier)**
-  - In [App Store Connect → Identifiers](https://appstoreconnect.apple.com)
-  - Bundle ID: `com.gleam.app` (or your chosen ID — must match Xcode project exactly)
-  - Enable capabilities: Push Notifications (if needed), Sign In with Apple (not needed, using Google)
+- [ ] **Create App ID** `[NEEDS DEV ACCOUNT]`
+  - App Store Connect → Identifiers → "+"
+  - Bundle ID: `com.gleam.app` (must match Xcode project exactly)
 
-- [ ] **Create the App in App Store Connect**
-  - App Store Connect → My Apps → "+"
-  - Platform: iOS
+- [ ] **Create App in App Store Connect** `[NEEDS DEV ACCOUNT]`
+  - My Apps → "+" → iOS
   - Name: "Gleam: Smile Whitening Tracker"
-  - Bundle ID: match what you set above
-  - SKU: `gleam-ios-001` (any unique internal string)
-  - Primary language: English
+  - SKU: `gleam-ios-001`
 
 ---
 
-## Phase 2 — In-App Purchases / Subscriptions
+## Phase 2 — In-App Purchases
 
-- [ ] **Create Subscription Group in App Store Connect**
+- [ ] **Create Subscription Group** `[NEEDS DEV ACCOUNT]`
   - My Apps → Gleam → In-App Purchases → Subscriptions
   - Group name: "Gleam Pro"
 
-- [ ] **Create Monthly Subscription product**
-  - Reference Name: "Gleam Pro Monthly"
+- [ ] **Create Monthly product** `[NEEDS DEV ACCOUNT]`
   - Product ID: `com.gleam.pro.monthly` ← must match the code exactly
-  - Subscription Duration: 1 Month
-  - Price: $4.99 (Tier 5)
-  - Localization: add EN display name + description
+  - Duration: 1 Month | Price: $4.99 (Tier 5)
 
-- [ ] **Create Yearly Subscription product**
-  - Reference Name: "Gleam Pro Yearly"
+- [ ] **Create Yearly product** `[NEEDS DEV ACCOUNT]`
   - Product ID: `com.gleam.pro.yearly` ← must match the code exactly
-  - Subscription Duration: 1 Year
-  - Price: $34.99 (Tier 35)
-  - Add promotional text: "Save ~40% vs monthly"
+  - Duration: 1 Year | Price: $34.99 (Tier 35)
 
-- [ ] **Optionally configure a Free Trial**
-  - 3-day or 7-day free trial for new subscribers (set in App Store Connect per product)
-
-- [ ] **Bank & Tax info**
+- [ ] **Bank & Tax info** `[NEEDS DEV ACCOUNT]`
   - App Store Connect → Agreements, Tax, and Banking
-  - Must be completed before any paid app/IAP can go live
+  - Required before any paid IAP can go live
 
 ---
 
 ## Phase 3 — Firebase Production Setup
 
-- [ ] **Create a production Firebase project** (or promote existing to production)
-  - Firebase Console → new project (e.g., `gleam-prod`)
-  - Enable: Authentication (Google), Firestore, Storage, Cloud Functions
+- [ ] **Create production Firebase project** `[NO DEV ACCOUNT NEEDED]`
+  - Firebase Console → new project (e.g. `gleam-prod`)
+  - Enable: Auth (Google), Firestore, Storage, Cloud Functions
 
-- [ ] **Download production `GoogleService-Info.plist`**
-  - Firebase Console → Project Settings → iOS app → download plist
-  - Add to Xcode target (replace dev plist for Release builds, or use build phases)
-  - Verify `REVERSED_CLIENT_ID` URL scheme in Info.plist matches
+- [ ] **Download production `GoogleService-Info.plist`** `[NO DEV ACCOUNT NEEDED]`
+  - Firebase Console → Project Settings → iOS app → download
+  - Add to Xcode target (replace dev plist for Release builds)
 
-- [ ] **Set production `API_BASE_URL`**
-  - Get your Firebase Functions URL from the Functions dashboard
-  - Set it in `Config/Release.xcconfig`: `API_BASE_URL = https://YOUR_REGION-YOUR_PROJECT.cloudfunctions.net`
+- [ ] **Set production `API_BASE_URL`** `[NO DEV ACCOUNT NEEDED]`
+  - Update `Config/Release.xcconfig`: `API_BASE_URL = https://REGION-PROJECT.cloudfunctions.net`
 
-- [ ] **Deploy Firebase Cloud Functions to production**
+- [ ] **Deploy Firebase Cloud Functions** `[NO DEV ACCOUNT NEEDED]`
   ```bash
   firebase use gleam-prod
   firebase deploy --only functions
   ```
 
-- [ ] **Set OpenAI API key secret in production**
+- [ ] **Set OpenAI API key** `[NO DEV ACCOUNT NEEDED]`
   ```bash
   firebase functions:secrets:set OPENAI_API_KEY
   ```
 
-- [ ] **Review Firestore security rules** — ensure they're locked down for production (no open reads/writes)
+- [ ] **Review Firestore & Storage security rules** `[NO DEV ACCOUNT NEEDED]`
 
 ---
 
 ## Phase 4 — Xcode Signing & Build (on your Mac)
 
-- [ ] **Configure signing in Xcode**
-  - Open `Gleam.xcodeproj`
+- [ ] **Configure signing** `[NEEDS DEV ACCOUNT]`
   - Target → Signing & Capabilities → select your Team
   - Enable "Automatically manage signing"
-  - Xcode will generate/download provisioning profiles
 
-- [ ] **Set Marketing Version and Build number**
-  - Target → General → Version: `1.0.0`, Build: `1`
-  - Or set in `Config/Release.xcconfig` (already prepared by Claude)
-
-- [ ] **Set the StoreKit Configuration for testing** (Xcode only)
-  - Edit Scheme → Run → Options → StoreKit Configuration → select `Gleam.storekit`
-  - Test subscription purchases in Simulator before real submission
-
-- [ ] **Archive and upload**
-  ```
-  Product → Archive → Distribute App → App Store Connect → Upload
-  ```
-  Or with Fastlane (once Claude sets it up):
+- [ ] **Archive and upload** `[NEEDS DEV ACCOUNT]`
   ```bash
-  bundle exec fastlane release
+  bundle exec fastlane beta   # TestFlight
+  # or
+  bundle exec fastlane release  # App Store
   ```
 
 ---
 
 ## Phase 5 — Store Listing & Privacy
 
-- [ ] **App Store listing copy** (fill in App Store Connect)
-  - **Name:** Gleam: Smile Whitening Tracker
-  - **Subtitle:** AI Teeth Analysis & Care Plans
-  - **Description:** (see `fastlane/metadata/en-US/description.txt` once Claude generates it)
-  - **Keywords:** teeth whitening, smile analyzer, dental tracker, oral care, whitening tracker
-  - **Support URL:** your support page or GitHub issues link
-  - **Privacy Policy URL:** required — host a simple privacy policy page
+- [ ] **App Store listing copy** `[NEEDS DEV ACCOUNT]`
+  - Pre-filled in `fastlane/metadata/en-US/` — review and edit before uploading
+  - Upload with: `bundle exec fastlane metadata`
 
-- [ ] **Screenshots** (required sizes)
-  - 6.7" — iPhone 16 Pro Max simulator or device
-  - 6.1" — iPhone 16 simulator or device
-  - Run `bundle exec fastlane screenshots` after Claude sets up Fastlane
+- [ ] **Screenshots** `[NEEDS DEV ACCOUNT]`
+  - Run: `bundle exec fastlane screenshots` (needs Mac + Xcode)
+  - Required: 6.7" (iPhone 16 Pro Max) and 6.1" (iPhone 16)
 
-- [ ] **App Preview video** (optional but boosts conversion)
+- [ ] **App Icon** — verify all sizes in `Assets.xcassets/AppIcon.appiconset` including 1024×1024
 
-- [ ] **App Icon** — verify it's included in `Assets.xcassets/AppIcon.appiconset` at all required sizes (1024×1024 for App Store)
+- [ ] **Privacy Policy URL** — already set to existing URL in `fastlane/metadata/en-US/privacy_url.txt`; update if needed
 
 ---
 
-## Phase 6 — Privacy Questionnaire (App Store Connect)
+## Phase 6 — Privacy Questionnaire
 
-- [ ] **Data types collected** — fill in App Store Connect Privacy section:
-  - **Contact info:** email (via Google Sign-In) — linked to identity
-  - **Identifiers:** User ID (Firebase UID) — linked to identity
-  - **Photos/Videos:** user-submitted scan photos — not linked to identity (stored in Firebase Storage)
-  - **Usage data:** scan frequency, scores — linked to identity (Firestore)
-  - No: precise location, health data, financial info, browsing history
+Fill in App Store Connect → App Privacy:
 
-- [ ] **Confirm no third-party ad SDKs** (Gleam uses none currently — clean label)
+- [ ] **Contact info:** email (via Google Sign-In) — linked to identity `[NEEDS DEV ACCOUNT]`
+- [ ] **Identifiers:** User ID (Firebase UID) — linked to identity `[NEEDS DEV ACCOUNT]`
+- [ ] **Photos:** scan photos — not linked to identity (Firebase Storage) `[NEEDS DEV ACCOUNT]`
+- [ ] **Usage data:** scan frequency, scores — linked to identity (Firestore) `[NEEDS DEV ACCOUNT]`
+- [ ] No location, health, financial, or ad data collected `[NEEDS DEV ACCOUNT]`
 
 ---
 
 ## Phase 7 — TestFlight & Review
 
-- [ ] **TestFlight internal testing**
-  - Upload a build, add yourself as internal tester
-  - Test full purchase flow with sandbox Apple ID (create at App Store Connect → Users → Sandbox Testers)
-  - Test on a real iPhone (camera, Google Sign-In, IAP)
+- [ ] **Internal TestFlight testing** `[NEEDS DEV ACCOUNT]`
+  - Upload build, add yourself, test on real iPhone
+  - Create Sandbox Apple ID in App Store Connect → Users → Sandbox Testers
+  - Test the full IAP purchase/restore flow with sandbox credentials
 
-- [ ] **External TestFlight** (optional, recommended)
-  - Invite 5–10 beta users before public launch
-
-- [ ] **Submit for App Review**
-  - Fill in review notes: "App uses camera for smile analysis. Test account: [provide sandbox credentials if Sign-In is required]"
-  - Confirm age rating (likely 4+ or 12+)
-  - Submit
+- [ ] **Submit for App Review** `[NEEDS DEV ACCOUNT]`
+  - Fill review notes: "App uses camera for smile analysis. No demo account required."
+  - Confirm age rating (4+)
 
 ---
 
 ## Phase 8 — Post-Launch
 
-- [ ] **Monitor crash reports** in Xcode Organizer / Firebase Crashlytics (add Crashlytics if not already)
-- [ ] **Monitor subscription metrics** in App Store Connect → Sales & Trends
+- [ ] **Monitor crashes** in Xcode Organizer
+- [ ] **Monitor subscriptions** in App Store Connect → Sales & Trends
 - [ ] **Respond to App Store reviews**
-- [ ] **Set up a privacy policy page** (legally required — can use a free generator like [privacypolicies.com](https://www.privacypolicies.com))
-- [ ] **Monitor Firebase usage** — OpenAI API calls cost money per scan; consider rate limiting free tier on the backend
+- [ ] **Watch Firebase costs** — OpenAI API charges per scan; backend rate-limiting for free tier is recommended post-launch
 
 ---
 
-## What Claude Can Automate for You
+## Automation Summary
 
-| Task | Tool | Notes |
+| Task | Tool | Account needed? |
 |---|---|---|
-| StoreKit2 code integration | Claude directly | See `CODING_TODO.md` |
-| Paywall UI | Claude directly | See `CODING_TODO.md` |
-| Fastlane config files | Claude directly | You run on Mac |
-| Auto-screenshots | Fastlane `snapshot` | Needs Mac + Xcode |
-| Metadata/description upload | Fastlane `deliver` | Needs Apple credentials |
-| TestFlight upload | Fastlane `pilot` | Needs Mac + Xcode |
-| Full release lane | Fastlane `gym` + `deliver` | Needs Mac + Xcode |
-| App Store Connect API | `fastlane` + ASC API key | Can create IAP products via API if you provide the key |
+| IAP code + PaywallView | Claude (done) | No |
+| Local StoreKit testing | Xcode `.storekit` config (done) | No |
+| Screenshots | `bundle exec fastlane screenshots` | No (Xcode/Mac only) |
+| Metadata upload | `bundle exec fastlane metadata` | Yes |
+| TestFlight upload | `bundle exec fastlane beta` | Yes |
+| Full release | `bundle exec fastlane release` | Yes |
 
-**Fastlane tip:** After Claude sets up the Fastlane files, run `gem install fastlane` on your Mac once, then `bundle exec fastlane [lane]` from the project root. This handles screenshots, upload, and submission automatically.
-
----
-
-## Quick Notes
-
-- The app runs fully without your laptop once live, as long as Firebase Functions are deployed and `GoogleService-Info.plist` + `API_BASE_URL` point to production.
-- Product IDs in code **must exactly match** what you create in App Store Connect: `com.gleam.pro.monthly`, `com.gleam.pro.yearly`
-- Sandbox purchases during TestFlight use a **separate Sandbox Apple ID** — create one in App Store Connect → Users → Sandbox Testers
-- Free trial (if configured in App Store Connect) requires no extra code — StoreKit2 handles it automatically
+**To use Fastlane on your Mac:**
+```bash
+gem install bundler
+bundle install   # reads Gemfile in project root
+bundle exec fastlane [lane]
+```

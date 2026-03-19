@@ -8,12 +8,15 @@ struct ScanView: View {
     @Environment(\.scanRepository) private var scanRepository
     @EnvironmentObject private var scanSession: ScanSession
     @EnvironmentObject private var historyStore: HistoryStore
+    @EnvironmentObject private var subscriptionManager: SubscriptionManager
+    @EnvironmentObject private var scanLimitManager: ScanLimitManager
     @State private var photoItem: PhotosPickerItem? = nil
     @State private var selectedImageData: Data? = nil
     @State private var isAnalyzing = false
     @State private var showCamera = false
     @State private var errorMessage: String? = nil
     @State private var showErrorAlert = false
+    @State private var showPaywall = false
     private let stainTags = StainTag.defaults
     @State private var selectedTagIDs: Set<String> = []
 
@@ -135,9 +138,30 @@ struct ScanView: View {
                                     }
                                 }
                                 
+                                // Remaining scans badge for free users
+                                if !subscriptionManager.isPremium {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "sparkles")
+                                            .font(.caption2)
+                                        Text(scanLimitManager.freeScansRemaining == 0
+                                             ? "No free scans left today"
+                                             : "\(scanLimitManager.freeScansRemaining) free scan\(scanLimitManager.freeScansRemaining == 1 ? "" : "s") left today")
+                                        .font(.caption)
+                                    }
+                                    .foregroundStyle(scanLimitManager.freeScansRemaining == 0 ? .red : .secondary)
+                                    .padding(.horizontal, AppSpacing.m)
+                                    .padding(.vertical, AppSpacing.xs)
+                                    .background(Color(.tertiarySystemBackground))
+                                    .clipShape(Capsule())
+                                }
+
                                 // Analyze button - hero action
                                 Button {
-                                    Task { await analyze() }
+                                    if subscriptionManager.isPremium || scanLimitManager.canScanAsFreeUser {
+                                        Task { await analyze() }
+                                    } else {
+                                        showPaywall = true
+                                    }
                                 } label: {
                                     HStack(spacing: 12) {
                                         if isAnalyzing {
@@ -179,6 +203,10 @@ struct ScanView: View {
                 selectedTagIDs.removeAll()
                 scanSession.capturedImageData = nil
             }
+        }
+        .sheet(isPresented: $showPaywall) {
+            PaywallView()
+                .environmentObject(subscriptionManager)
         }
         .fullScreenCover(isPresented: $showCamera) {
             CameraCaptureView { data in
@@ -274,6 +302,7 @@ struct ScanView: View {
                 fallbackContextTags: selectedTags.map { $0.id }
             )
             AppHaptics.scanComplete()
+            scanLimitManager.recordScan()
             onFinished(outcome.result)
         } catch {
             AppHaptics.error()

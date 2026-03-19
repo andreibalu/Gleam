@@ -8,6 +8,7 @@
 import SwiftUI
 import SwiftData
 import FirebaseCore
+import StoreKit
 import UIKit
 
 @main
@@ -17,6 +18,8 @@ struct GleamApp: App {
     @StateObject private var historyStore: HistoryStore
     @StateObject private var achievementManager: AchievementManager
     @StateObject private var brushingHabitStore: BrushingHabitStore
+    @StateObject private var subscriptionManager: SubscriptionManager
+    @StateObject private var scanLimitManager: ScanLimitManager
     private let authRepository: any AuthRepository
     private let scanRepository: any ScanRepository
 
@@ -36,6 +39,8 @@ struct GleamApp: App {
                 authRepository: NoopAuthRepository()
             ))
             self._brushingHabitStore = StateObject(wrappedValue: BrushingHabitStore(persistence: NoopBrushingPersistence()))
+            self._subscriptionManager = StateObject(wrappedValue: SubscriptionManager())
+            self._scanLimitManager = StateObject(wrappedValue: ScanLimitManager())
         } else {
             Self.configureFirebase()
             AppTheme.migrateLegacySettingIfNeeded()
@@ -64,6 +69,8 @@ struct GleamApp: App {
                 authRepository: authRepository
             ))
             self._brushingHabitStore = StateObject(wrappedValue: BrushingHabitStore())
+            self._subscriptionManager = StateObject(wrappedValue: SubscriptionManager())
+            self._scanLimitManager = StateObject(wrappedValue: ScanLimitManager())
         }
     }
 
@@ -94,6 +101,8 @@ struct GleamApp: App {
                     .environmentObject(historyStore)
                     .environmentObject(achievementManager)
                     .environmentObject(brushingHabitStore)
+                    .environmentObject(subscriptionManager)
+                    .environmentObject(scanLimitManager)
             }
         }
         .modelContainer(sharedModelContainer)

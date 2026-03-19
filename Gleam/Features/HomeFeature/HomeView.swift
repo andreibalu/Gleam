@@ -12,6 +12,7 @@ struct HomeView: View {
     @EnvironmentObject private var historyStore: HistoryStore
     @EnvironmentObject private var achievementManager: AchievementManager
     @EnvironmentObject private var brushingHabitStore: BrushingHabitStore
+    @EnvironmentObject private var subscriptionManager: SubscriptionManager
     @AppStorage("userFirstName") private var userFirstName: String = "Andrei"
     @AppStorage("planDisplayMode") private var planDisplayModeRawValue: String = PlanDisplayMode.personalized.rawValue
     @State private var lastResult: ScanResult?
@@ -23,6 +24,7 @@ struct HomeView: View {
     @State private var showHabitSheet = false
     @State private var showFlow = false
     @State private var toastMessage: String?
+    @State private var showPaywall = false
 
     private let shadeStages = ShadeStage.defaults
     private let defaultPlan = Recommendations(
@@ -123,7 +125,13 @@ struct HomeView: View {
                     plan: currentPlan,
                     isPersonalized: isPersonalizedPlanActive,
                     status: planStatus,
-                    onTap: { showPlanSheet = true },
+                    onTap: {
+                        if hasPersonalizedPlan && !subscriptionManager.isPremium {
+                            showPaywall = true
+                        } else {
+                            showPlanSheet = true
+                        }
+                    },
                     hasAvailablePersonalizedPlan: hasPersonalizedPlan
                 )
 
@@ -148,6 +156,10 @@ struct HomeView: View {
             }
             .accessibilityIdentifier("camera_sheet")
             .ignoresSafeArea()
+        }
+        .sheet(isPresented: $showPaywall) {
+            PaywallView()
+                .environmentObject(subscriptionManager)
         }
         .sheet(isPresented: $showPlanSheet) {
             PlanSheetView(
