@@ -40,7 +40,6 @@ Guide for agents editing Gleam. Keep terse. Preserve project contracts over pros
 - `Gleam/Support/PreviewSupport/`, `Gleam/Support/TestSupport/`: previews/fixtures.
 - `GleamTests/`: unit tests. `GleamUITests/`: UI/launch tests.
 - `functions/src/index.ts`: HTTPS functions + OpenAI prompts.
-- `Config/*.xcconfig`: present, not referenced by pbxproj.
 
 `HomeView.swift` and `ScanView.swift` are large. Prefer private local subviews/helpers before new files. Add files only for real reuse/ownership gain.
 
@@ -88,8 +87,8 @@ Guide for agents editing Gleam. Keep terse. Preserve project contracts over pros
 - `OPENAI_API_KEY` belongs only in Firebase Functions secrets.
 - `APIConfiguration.swift` reads Info.plist keys first: `API_ANALYZE_URL`, `API_PLAN_URL`, `API_PLAN_LATEST_URL`, `API_HISTORY_LATEST_URL`, `API_HISTORY_URL`.
 - If endpoint keys missing, URLs derive from hard-coded Cloud Run analyze URL by replacing host function prefix.
-- Known mismatch: project sets `INFOPLIST_KEY_API_BASE_URL = $(API_BASE_URL)` and `Config/*.xcconfig` defines placeholders, but pbxproj does not reference xcconfigs and app code does not read `API_BASE_URL`.
-- `buildServer.json` has stale absolute path from another checkout. Regenerate before trusting.
+- App code reads per-endpoint Info.plist keys, not `API_BASE_URL`: `API_ANALYZE_URL`, `API_PLAN_URL`, `API_PLAN_LATEST_URL`, `API_HISTORY_LATEST_URL`, `API_HISTORY_URL`.
+- `buildServer.json` is intentionally ignored local tooling. Regenerate locally if needed.
 
 ## UI Rules
 

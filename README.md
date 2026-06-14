@@ -2,7 +2,7 @@
 
 SwiftUI iOS app that analyzes smile photos using a Firebase-backed GPT-4o-mini workflow.
 
-For architecture guidance and contributor conventions, see [AGENT.md](AGENT.md).
+For architecture guidance and contributor conventions, see [AGENTS.md](AGENTS.md).
 
 ---
 
@@ -36,7 +36,7 @@ Gleam/
     └── TestSupport/     # Fixtures for tests
 ```
 
-Key patterns (detailed in `AGENT.md`): repository-driven data access, environment-based dependency injection, async/await concurrency, and protocol-oriented design.
+Key patterns (detailed in `AGENTS.md`): repository-driven data access, environment-based dependency injection, async/await concurrency, and protocol-oriented design.
 
 ---
 
@@ -85,5 +85,5 @@ xcodebuild test -scheme Gleam \
 
 ## Support
 
-- For architecture and contribution rules, read [AGENT.md](AGENT.md).
+- For architecture and contribution rules, read [AGENTS.md](AGENTS.md).
 - Firebase and Google Sign-In configuration must be completed before shipping (ID token validation occurs in backend code).

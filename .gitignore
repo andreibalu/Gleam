@@ -67,8 +67,7 @@ Artifacts/
 *.simdevicelog
 *.simdeviceplist
 
-# Documentation (maintained locally)
-README.md
+# Documentation drafts (maintained locally)
 TODO.md
 APP_STORE_CHECKLIST.md
 
@@ -81,9 +80,10 @@ GoogleService-Info.plist
 firebase-debug.log
 firebase-debug.*.log
 ui-debug.log
-.firebaserc
 
 # Cursor rules
 .cursor/rules/*.mdc
 
+# Local build tooling
+buildServer.json
 

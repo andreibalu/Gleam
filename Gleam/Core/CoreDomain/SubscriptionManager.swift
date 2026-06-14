@@ -1,5 +1,5 @@
+import Combine
 import StoreKit
-import SwiftUI
 
 /// Manages StoreKit 2 subscriptions for Gleam Pro.
 ///

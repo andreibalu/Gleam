@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// Tracks the free-tier daily scan limit (3 scans per calendar day).

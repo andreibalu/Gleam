@@ -77,8 +77,9 @@ Legend: `[NO DEV ACCOUNT NEEDED]` = do this now | `[NEEDS DEV ACCOUNT]` = wait f
   - Firebase Console → Project Settings → iOS app → download
   - Add to Xcode target (replace dev plist for Release builds)
 
-- [ ] **Set production `API_BASE_URL`** `[NO DEV ACCOUNT NEEDED]`
-  - Update `Config/Release.xcconfig`: `API_BASE_URL = https://REGION-PROJECT.cloudfunctions.net`
+- [ ] **Verify production API endpoints** `[NO DEV ACCOUNT NEEDED]`
+  - `APIConfiguration.swift` reads `API_ANALYZE_URL`, `API_PLAN_URL`, `API_PLAN_LATEST_URL`, `API_HISTORY_LATEST_URL`, and `API_HISTORY_URL` from Info.plist when present.
+  - Verify the Release build points at production Firebase Functions or intentionally uses the compiled fallback URLs.
 
 - [ ] **Deploy Firebase Cloud Functions** `[NO DEV ACCOUNT NEEDED]`
   ```bash

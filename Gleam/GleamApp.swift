@@ -6,9 +6,7 @@
 //
 
 import SwiftUI
-import SwiftData
 import FirebaseCore
-import StoreKit
 import UIKit
 
 @main
@@ -78,16 +76,6 @@ struct GleamApp: App {
         AppTheme(rawValue: themeRawValue) ?? .system
     }
 
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([Item.self])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: Self.isRunningTests)
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
-
     var body: some Scene {
         WindowGroup {
             if Self.isRunningTests {
@@ -105,7 +93,6 @@ struct GleamApp: App {
                     .environmentObject(scanLimitManager)
             }
         }
-        .modelContainer(sharedModelContainer)
     }
 
     private static func configureFirebase() {
