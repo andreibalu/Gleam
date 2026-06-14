@@ -6,6 +6,7 @@ struct SettingsView: View {
     @EnvironmentObject private var scanSession: ScanSession
     @EnvironmentObject private var historyStore: HistoryStore
     @EnvironmentObject private var subscriptionManager: SubscriptionManager
+    @EnvironmentObject private var brushingHabitStore: BrushingHabitStore
     @AppStorage(AppTheme.storageKey) private var themeRawValue: String = AppTheme.system.rawValue
     @AppStorage("didCompleteOnboarding") private var didCompleteOnboarding: Bool = false
     @State private var showResetAlert: Bool = false
@@ -161,6 +162,7 @@ struct SettingsView: View {
             try authRepository.signOut()
             didCompleteOnboarding = false
             scanSession.reset()
+            brushingHabitStore.reset()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -172,6 +174,7 @@ struct SettingsView: View {
         do {
             try await authRepository.deleteAccount()
             await historyStore.clearAll()
+            brushingHabitStore.reset()
             didCompleteOnboarding = false
             scanSession.reset()
         } catch {
@@ -185,5 +188,4 @@ struct SettingsView: View {
         isDeleting = false
     }
 }
-
 

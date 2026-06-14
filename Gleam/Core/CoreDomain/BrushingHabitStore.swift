@@ -256,6 +256,25 @@ final class BrushingHabitStore: ObservableObject {
         return .recorded
     }
 
+    func unmarkBrushed(_ slot: BrushingSlot, date: Date = Date()) {
+        refreshIfNeeded(date: date)
+        let currentDay = calendar.startOfDay(for: date)
+        let key = Self.key(for: currentDay, calendar: calendar)
+        guard var record = records[key] else { return }
+        switch slot {
+        case .morning:
+            guard record.morningCompleted else { return }
+            record.morningCompleted = false
+        case .evening:
+            guard record.eveningCompleted else { return }
+            record.eveningCompleted = false
+        }
+        todayRecord = record
+        records[key] = record
+        recalculateStreaks(referenceDate: date)
+        persist(referenceDate: date)
+    }
+
     private func isSlotAvailable(_ slot: BrushingSlot, at date: Date) -> Bool {
         let hour = calendar.component(.hour, from: date)
         switch slot {
@@ -275,6 +294,15 @@ final class BrushingHabitStore: ObservableObject {
         if currentStreak > bestStreak {
             bestStreak = currentStreak
         }
+    }
+
+    func reset() {
+        configuration = nil
+        records = [:]
+        bestStreak = 0
+        currentStreak = 0
+        todayRecord = BrushingDayRecord.empty(for: calendar.startOfDay(for: Date()))
+        persistence.saveSnapshot(.empty)
     }
 
     private func persist(referenceDate: Date) {

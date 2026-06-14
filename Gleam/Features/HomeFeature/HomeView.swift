@@ -798,6 +798,7 @@ private struct BrushingHabitCard: View {
 
     @State private var celebratorySlot: BrushingSlot?
     @State private var isAnimatingCelebration = false
+    @State private var isExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.m) {
@@ -836,12 +837,17 @@ private struct BrushingHabitCard: View {
                 .frame(height: 220)
                 .animation(.spring(response: 0.6, dampingFraction: 0.85), value: store.todayRecord)
 
-                progressView
-                reminderSummary
+                if isExpanded {
+                    progressView
+                    reminderSummary
+                }
             } else {
-                setupPrompt
+                if isExpanded {
+                    setupPrompt
+                }
             }
         }
+        .animation(.spring(), value: isExpanded)
         .padding()
         .background(
             RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
@@ -874,17 +880,25 @@ private struct BrushingHabitCard: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.trailing, AppSpacing.xs)
             Button(store.isConfigured ? "Edit" : "Set up") {
                 onConfigureTap()
             }
             .font(.subheadline.weight(.semibold))
         }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.spring()) {
+                isExpanded.toggle()
+            }
+        }
     }
 
     private var setupPrompt: some View {
         VStack(alignment: .leading, spacing: AppSpacing.m) {
-            Text("Set up your washing habit")
-                .font(.title3.weight(.semibold))
             Text("Pick morning and evening reminder times. We'll celebrate every long-press until notifications ship.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -965,16 +979,21 @@ private struct BrushingHabitCard: View {
     }
 
     private func handleLongPress(for slot: BrushingSlot) {
-        let result = store.markBrushed(slot)
-        switch result {
-        case .recorded:
-            BrushingHaptics.celebrate()
-        case .alreadyCompleted:
+        if store.slotState(for: slot) == .completed {
+            store.unmarkBrushed(slot)
             BrushingHaptics.softTap()
-        case .locked:
-            BrushingHaptics.warning()
-        case .notConfigured:
-            onConfigureTap()
+        } else {
+            let result = store.markBrushed(slot)
+            switch result {
+            case .recorded:
+                BrushingHaptics.celebrate()
+            case .alreadyCompleted:
+                BrushingHaptics.softTap()
+            case .locked:
+                BrushingHaptics.warning()
+            case .notConfigured:
+                onConfigureTap()
+            }
         }
     }
 }
@@ -1066,7 +1085,8 @@ private struct ToothButton: View {
     let isCelebrating: Bool
     let onLongPress: () -> Void
 
-    @GestureState private var isPressing = false
+    @State private var isPressing = false
+    @State private var hapticTask: Task<Void, Never>? = nil
     @AppStorage("hasCompletedFirstBrushing") private var hasCompletedFirstBrushing = false
     @State private var pulseHint = false
 
@@ -1075,17 +1095,6 @@ private struct ToothButton: View {
     }
 
     var body: some View {
-        let gesture = LongPressGesture(minimumDuration: 0.6)
-            .updating($isPressing) { value, state, _ in
-                state = value
-            }
-            .onEnded { completed in
-                if completed {
-                    hasCompletedFirstBrushing = true
-                    onLongPress()
-                }
-            }
-
         VStack(spacing: 6) {
             ZStack {
                 if showHint {
@@ -1134,11 +1143,31 @@ private struct ToothButton: View {
         .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isPressing)
         .animation(.spring(response: 0.4, dampingFraction: 0.75), value: isCelebrating)
         .contentShape(Circle())
-        .gesture(state == .available ? gesture : nil)
-        .allowsHitTesting(state == .available)
+        .onLongPressGesture(minimumDuration: state == .completed ? 1.0 : 1.5, pressing: { pressing in
+            isPressing = pressing
+            if pressing {
+                hapticTask = Task { @MainActor in
+                    var interval: TimeInterval = 0.10
+                    while !Task.isCancelled {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.45)
+                        try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                        interval = max(0.04, interval * 0.80)
+                    }
+                }
+            } else {
+                hapticTask?.cancel()
+                hapticTask = nil
+            }
+        }, perform: {
+            hapticTask?.cancel()
+            hapticTask = nil
+            hasCompletedFirstBrushing = true
+            onLongPress()
+        })
+        .allowsHitTesting(state != .locked)
         .accessibilityLabel(slot == .morning ? "Morning brushing" : "Night brushing")
         .accessibilityValue(accessibilityValue)
-        .accessibilityHint("Long press to mark complete")
+        .accessibilityHint(state == .completed ? "Long press to undo" : "Long press to mark complete")
         .onAppear { pulseHint = true }
     }
 
@@ -1192,7 +1221,7 @@ private struct ToothButton: View {
 
     private var scale: CGFloat {
         if isPressing {
-            return 1.1
+            return state == .completed ? 0.9 : 1.12
         }
         if isCelebrating {
             return 1.08
